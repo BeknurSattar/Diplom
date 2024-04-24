@@ -1,9 +1,11 @@
 import tkinter as tk
+from tkinter import messagebox
 from home_page import HomePage
 from data_page import DataPage
 from camera_page import CameraPage
 from settings_page import SettingsPage
 from profile_page import ProfilePage
+from auth_page import AuthPage
 
 class Page(tk.Tk):
     def __init__(self):
@@ -16,7 +18,24 @@ class Page(tk.Tk):
         self.selected_index = 0
 
         self.configure(bg="#f0f0f0")
-        self.create_widgets()
+        self.check_authentication()
+
+    def check_authentication(self):
+        # Проверяем, авторизован ли пользователь
+        if not self.is_authenticated:
+            # Если не авторизован, открываем окно авторизации
+            login_window = AuthPage(self)
+            self.wait_window(login_window)  # Ждем, пока окно авторизации будет закрыто
+
+            # После закрытия окна авторизации, проверяем результат
+            if login_window.is_authenticated:
+                self.is_authenticated = True
+                self.create_widgets()
+            else:
+                # Если пользователь не авторизован, закрываем приложение
+                self.destroy()
+        else:
+            self.create_widgets()
 
     def create_widgets(self):
         self.app_bar = tk.Frame(self, height=56, bg="#1976D2")
@@ -28,7 +47,7 @@ class Page(tk.Tk):
         self.profile_button = tk.Button(self.app_bar, text="Профиль", bg="#1976D2", fg="white", relief="flat", command=self.show_profile)
         self.profile_button.pack(side="right", padx=(0, 10))
 
-        self.exit_button = tk.Button(self.app_bar, text="Выход", bg="#1976D2", fg="white", relief="flat", command=self.on_exit_click)
+        self.exit_button = tk.Button(self.app_bar, text="Выход", bg="#1976D2", fg="white", relief="flat", command=self.confirm_exit)
         self.exit_button.pack(side="right")
 
         self.nav_frame = tk.Frame(self, bg="#ffffff", width=200)
@@ -55,11 +74,15 @@ class Page(tk.Tk):
         self.update_body_content()
 
     def show_profile(self):
-        self.selected_index = -1  # Special index for profile page
+        self.selected_index = -1  # Специальный индекс для страницы профиля
         self.update_body_content()
 
-    def on_exit_click(self):
-        print("Выход")
+    def confirm_exit(self):
+        # Запрашиваем подтверждение выхода
+        if messagebox.askokcancel("Выход", "Вы уверены, что хотите выйти?"):
+            # Если пользователь подтвердил выход, перекидываем на окно авторизации
+            self.is_authenticated = False
+            self.destroy()
 
     def update_body_content(self):
         for widget in self.body_frame.winfo_children():

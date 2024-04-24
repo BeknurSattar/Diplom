@@ -218,62 +218,87 @@ class CameraPage(tk.Frame):
                 if file.endswith(".mp4") or file.endswith(".avi"):
                     video_files.append(os.path.join(videos_directory, file))
         return video_files
+
     def show_video_in_box(self, index, box, dlg_modal):
-        global video_source, cap
         if 0 <= index < len(self.videos):
-            video_source = self.videos[index]# Предположим, что self.videos содержит источники видео
+            video_source = self.videos[index]
             cap = cv2.VideoCapture(video_source)
-            # Отображение видео в контейнере box
+            dlg_modal.destroy()
+
+            # Удаляем предыдущую видео метку из бокса
+            for widget in box.winfo_children():
+                widget.destroy()
+
+            # Рассчитываем размеры видео в зависимости от количества боксов
+            num_boxes = self.layout * self.layout
+            box_width = box.winfo_width()
+            box_height = box.winfo_height()
+
+            # Читаем первый кадр из видеопотока
+            ret, frame = cap.read()
+
+            # Проверяем успешность чтения кадра
+            if ret:
+                # Получаем размеры кадра
+                frame_height, frame_width, _ = frame.shape
+
+                # Рассчитываем соотношение сторон кадра
+                aspect_ratio = frame_width / frame_height
+
+                # Определяем, какое измерение (ширина или высота) бокса ограничивает размеры видео
+                if aspect_ratio * box_height > box_width:
+                    # Если ширина видео слишком большая, масштабируем по высоте бокса
+                    video_height = box_height
+                    video_width = int(video_height * aspect_ratio)
+                else:
+                    # Иначе масштабируем по ширине бокса
+                    video_width = box_width
+                    video_height = int(video_width / aspect_ratio)
+
+                # Шкалируем кадр до новых размеров
+                frame_resized = cv2.resize(frame, (video_width, video_height))
+
+                # Конвертируем кадр из формата BGR в RGB
+                frame_rgb = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB)
+
+                # Создаем изображение PIL из кадра
+                img = Image.fromarray(frame_rgb)
+
+                # Создаем объект PhotoImage изображения
+                imgtk = ImageTk.PhotoImage(image=img)
+
+                # Создаем метку для отображения видео
+                video_label = tk.Label(box, width=video_width, height=video_height, image=imgtk)
+                video_label.imgtk = imgtk  # Сохраняем ссылку на объект PhotoImage, чтобы избежать удаления из памяти
+                video_label.pack(fill="both", expand=True)
+
+                # Функция для обновления изображения на метке
+                def update_image():
+                    ret, frame = cap.read()
+                    if ret:
+                        # Масштабируем новый кадр и конвертируем его в RGB
+                        frame_resized = cv2.resize(frame, (video_width, video_height))
+                        frame_rgb = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB)
+                        img = Image.fromarray(frame_rgb)
+                        imgtk = ImageTk.PhotoImage(image=img)
+                        video_label.configure(image=imgtk)
+                        video_label.imgtk = imgtk
+                        video_label.after(10, update_image)  # Обновляем изображение каждые 10 миллисекунд
+
+                # Запускаем обновление изображения
+                update_image()
+
+            # Закрываем видеопоток при закрытии окна
+            def on_closing():
+                cap.release()
+                dlg_modal.destroy()
+
+            dlg_modal.protocol("WM_DELETE_WINDOW", on_closing)
+
         else:
             print("Недопустимый индекс видео")
             print(self.videos)
-        # Удаляем кнопку из контейнера box
-        for widget in box.winfo_children():
-            widget.destroy()
 
-
-
-
-
-        # Читаем первый кадр из видеопотока
-        ret, frame = cap.read()
-
-        # Проверяем успешность чтения кадра
-        if ret:
-            # Конвертируем кадр из формата BGR в RGB
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
-            # Создаем изображение PIL из кадра
-            img = Image.fromarray(frame_rgb)
-
-            # Создаем объект PhotoImage изображения
-            imgtk = ImageTk.PhotoImage(image=img)
-
-            # Создаем метку для отображения видео
-            video_label = tk.Label(box, image=imgtk)
-            video_label.imgtk = imgtk  # Сохраняем ссылку на объект PhotoImage, чтобы избежать удаления из памяти
-            video_label.pack(fill="both", expand=True)
-
-            # Функция для обновления изображения на метке
-            def update_image():
-                ret, frame = cap.read()
-                if ret:
-                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    img = Image.fromarray(frame_rgb)
-                    imgtk = ImageTk.PhotoImage(image=img)
-                    video_label.configure(image=imgtk)
-                    video_label.imgtk = imgtk
-                    video_label.after(10, update_image)  # Обновляем изображение каждые 10 миллисекунд
-
-            # Запускаем обновление изображения
-            update_image()
-
-        # Закрываем видеопоток при закрытии окна
-        def on_closing():
-            cap.release()
-            dlg_modal.destroy()
-
-        dlg_modal.protocol("WM_DELETE_WINDOW", on_closing)
     def set_layout(self, layout):
         self.layout = layout
         self.update_content()
@@ -288,14 +313,17 @@ class CameraPage(tk.Frame):
         for _ in range(self.layout):
             row = tk.Frame(self.content)
             row.pack(side="top", padx=5, pady=5)
+
             for _ in range(self.layout):
-                box = tk.Frame(row, bg="blue", bd=5, relief="ridge", width=150, height=150)  # Изменим размеры box
-                box.pack(side="left", padx=5, pady=5)
-                btn = tk.Button(box, text="Выбрать камеру", command=lambda b=box: self.open_dlg_modal(b))
-                btn.pack(padx=10, pady=10)
+                # Создаем рамку для кнопки с фиксированным размером и центрированием
+                box = tk.Frame(row, bg="blue", bd=5, relief="ridge", width=200, height=200)
+                box.pack(side="left", padx=20, pady=20)  # Увеличиваем расстояние между кнопками
+                box.grid_propagate(False)  # Отключаем автоматическое изменение размера рамки
 
-
-
+                # Создаем кнопку внутри рамки
+                btn = tk.Button(box, text="Выбрать камеру", width=15, height=2, font=("Arial", 12),
+                                command=lambda b=box: self.open_dlg_modal(b))
+                btn.pack(expand=True, fill='both')  # Располагаем кнопку в центре рамки
 
     def appbar(self):
         app_bar = tk.Frame(self, height=56, bg="#1976D2")
@@ -321,4 +349,9 @@ class CameraPage(tk.Frame):
     def get_content(self):
         app_bar = self.appbar()
         self.set_layout(1)
+
+        # Размещаем app_bar сверху, а self.content заполняет оставшееся пространство
+        app_bar.pack(side="top", fill="x")
+        self.content.pack(side="top", fill="both", expand=True)
+
         return app_bar, self.content
