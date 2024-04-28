@@ -1,16 +1,16 @@
 import tkinter as tk
 from tkinter import messagebox
 import psycopg2
+import bcrypt
 
 from auth_page import AuthPage
-from utils import *
-
+from utils import connect_db  # Убедитесь, что функция connect_db правильно импортирована
 
 class RegisterPage(tk.Toplevel):
     def __init__(self, parent):
         super().__init__(parent)
         self.title("Регистрация")
-        self.geometry("300x400")  # Увеличили высоту окна для удобства
+        self.geometry("300x500")
         self.resizable(False, False)
         self.configure(bg="#f0f0f0")
 
@@ -42,12 +42,11 @@ class RegisterPage(tk.Toplevel):
         self.entry_confirm_password = tk.Entry(self, show="*", **entry_style)
         self.entry_confirm_password.pack(pady=5)
 
-        # Добавление списка должностей
         self.label_position = tk.Label(self, text="Должность:", **label_style)
         self.label_position.pack(pady=(5, 5))
         positions = ["Менеджер", "Администратор", "Разработчик", "Дизайнер"]
         self.selected_position = tk.StringVar(self)
-        self.selected_position.set(positions[0])  # Устанавливаем первый элемент списка по умолчанию
+        self.selected_position.set(positions[0])
         self.option_menu = tk.OptionMenu(self, self.selected_position, *positions)
         self.option_menu.config(font=("Arial", 12))
         self.option_menu.pack(pady=5)
@@ -56,8 +55,32 @@ class RegisterPage(tk.Toplevel):
         self.button_register = tk.Button(self, text="Зарегистрироваться", command=self.register, **button_style)
         self.button_register.pack(pady=(10, 5))
 
+        # Добавляем кнопку для показа пароля
+        self.show_password = tk.BooleanVar(self)
+        self.show_password.set(False)
+        self.show_password_button = tk.Checkbutton(self, text="Показать пароль", variable=self.show_password,
+                                                   command=self.toggle_password, **label_style)
+        self.show_password_button.pack(pady=5)
 
+        # Добавляем кнопку для перехода к окну авторизации
+        self.login_button = tk.Button(self, text="Уже зарегистрированы? Войти", command=self.go_to_login_page,
+                                      **button_style)
+        self.login_button.pack(pady=(10, 5))
 
+    def toggle_password(self):
+        if self.show_password.get():
+            self.entry_password.config(show="")
+            self.entry_confirm_password.config(show="")
+        else:
+            self.entry_password.config(show="*")
+            self.entry_confirm_password.config(show="*")
+
+    def go_to_login_page(self):
+        # Закрываем текущее окно и открываем окно авторизации
+        # self.withdraw()
+        # auth_window = AuthPage(self.parent)
+        # auth_window.grab_set()  # Переводим фокус на окно авторизации
+        self.destroy()
     def register(self):
         username = self.entry_username.get()
         email = self.entry_email.get()
@@ -65,28 +88,30 @@ class RegisterPage(tk.Toplevel):
         confirm_password = self.entry_confirm_password.get()
         position = self.selected_position.get()
 
-        if username and email and password and confirm_password:
-            if password == confirm_password:
-                conn = connect_db()
-                if conn:
-                    try:
-                        cursor = conn.cursor()
-                        cursor.execute("INSERT INTO users (username, email, password, position) VALUES (%s, %s, %s, %s)", (username, email, password, position))
-                        conn.commit()
-                        cursor.close()
-                        conn.close()
-                        messagebox.showinfo("Успех", "Регистрация прошла успешно!")
-                        self.destroy()
-
-                        # Перекидываем пользователя в окно авторизации после успешной регистрации
-                        auth_window = AuthPage(self.parent)
-                    except psycopg2.Error as e:
-                        print("Ошибка при выполнении SQL-запроса:", e)
-                        messagebox.showerror("Ошибка", "Произошла ошибка при регистрации. Пожалуйста, попробуйте снова.")
-            else:
-                messagebox.showerror("Ошибка", "Пароли не совпадают")
-        else:
+        if not all([username, email, password, confirm_password]):
             messagebox.showerror("Ошибка", "Пожалуйста, заполните все поля")
+            return
+
+        if password != confirm_password:
+            messagebox.showerror("Ошибка", "Пароли не совпадают")
+            return
+
+        hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')  # Хеширование пароля
+
+        conn = connect_db()
+        if conn:
+            try:
+                cursor = conn.cursor()
+                cursor.execute("INSERT INTO users (username, email, password, position) VALUES (%s, %s, %s, %s)",
+                               (username, email, hashed_password, position))
+                conn.commit()
+                cursor.close()
+                conn.close()
+                messagebox.showinfo("Успех", "Регистрация прошла успешно!")
+                # self.go_to_login_page() # Переводим фокус на окно авторизации
+            except psycopg2.Error as e:
+                print("Ошибка при выполнении SQL-запроса:", e)
+                messagebox.showerror("Ошибка", "Произошла ошибка при регистрации. Пожалуйста, попробуйте снова.")
 
 if __name__ == "__main__":
     app = tk.Tk()

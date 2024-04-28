@@ -25,11 +25,16 @@ class Page(tk.Tk):
         if not self.is_authenticated:
             # Если не авторизован, открываем окно авторизации
             login_window = AuthPage(self)
+            login_window.attributes('-topmost', True)
+
             self.wait_window(login_window)  # Ждем, пока окно авторизации будет закрыто
 
             # После закрытия окна авторизации, проверяем результат
             if login_window.is_authenticated:
+                self.user_id = login_window.user_id
                 self.is_authenticated = True
+                self.lift()
+                self.attributes('-topmost', False)
                 self.create_widgets()
             else:
                 # Если пользователь не авторизован, закрываем приложение
@@ -89,7 +94,9 @@ class Page(tk.Tk):
             widget.destroy()
 
         if self.selected_index == -1:
-            ProfilePage(self.body_frame).pack(fill="both", expand=True)
+            profile_page = ProfilePage(self.body_frame, self.user_id)  # Передача user_id
+            profile_page.pack(fill="both", expand=True)
+
         else:
             self.pages[self.selected_index](self.body_frame).pack(fill="both", expand=True)
 

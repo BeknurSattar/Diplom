@@ -42,15 +42,6 @@ class CameraPage(tk.Frame):
         camera_id = self.camera_ids[class_id]
         self.detectByCamera(camera_id, class_id)
 
-    def first_frame(self, camera_id):
-        first_frame = None
-        video = cv2.VideoCapture(camera_id)
-        while True:
-            frame = video.read()
-            img = cv2.resize(frame, (800, 600))
-            if first_frame is None:
-                first_frame = img.copy()
-        return first_frame
 
     def detectByCamera(self, camera_id, class_id):
         global max_count3, framex3, county3, max3, avg_acc3_list, max_avg_acc3_list, max_acc3, max_avg_acc3
@@ -195,28 +186,30 @@ class CameraPage(tk.Frame):
         dlg_modal.geometry("400x200")
         dlg_modal.transient(self.content)
         dlg_modal.grab_set()
-
+        print(self.videos)
         actions_frame = tk.Frame(dlg_modal)
         actions_frame.pack(padx=10, pady=10)
 
-        for i, media in enumerate(self.camera_ids):
+        for i, media in enumerate(self.videos):
             btn_text = f"Камера {i + 1}"
             btn = tk.Button(actions_frame, text=btn_text,
-                            command=lambda index=media: self.show_video_in_box(index, box, dlg_modal))
+                             command=lambda index=media: self.show_video_in_box(index, box, dlg_modal))
+                             # command = lambda index=media: self.open_cam(index))
             btn.grid(row=i, column=0, padx=5, pady=5)
 
         cancel_btn = tk.Button(actions_frame, text="Отмена", command=close_dlg)
-        cancel_btn.grid(row=len(self.camera_ids), column=0, padx=5, pady=5)
+        cancel_btn.grid(row=len(self.videos), column=0, padx=5, pady=5)
 
         dlg_modal.protocol("WM_DELETE_WINDOW", close_dlg)
 
     def get_video_files(self):
-        video_files = []
+        video_files = {}
         videos_directory = "Videoes"  # Название вашей папки с видеофайлами
         if os.path.exists(videos_directory) and os.path.isdir(videos_directory):
-            for file in os.listdir(videos_directory):
+            files = os.listdir(videos_directory)
+            for i, file in enumerate(files, start=1):
                 if file.endswith(".mp4") or file.endswith(".avi"):
-                    video_files.append(os.path.join(videos_directory, file))
+                    video_files[i] = os.path.join(videos_directory, file)
         return video_files
 
     def show_video_in_box(self, index, box, dlg_modal):
