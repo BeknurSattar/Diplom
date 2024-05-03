@@ -107,3 +107,4 @@ class Page(tk.Tk):
 if __name__ == "__main__":
     app = Page()
     app.mainloop()
+
