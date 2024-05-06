@@ -1,3 +1,4 @@
+import re
 import tkinter as tk
 from tkinter import messagebox
 import psycopg2
@@ -42,12 +43,13 @@ class RegisterPage(tk.Toplevel):
         self.entry_confirm_password = tk.Entry(self, show="*", **entry_style)
         self.entry_confirm_password.pack(pady=5)
 
+        # Загрузка и отображение должностей
         self.label_position = tk.Label(self, text="Должность:", **label_style)
         self.label_position.pack(pady=(5, 5))
-        positions = ["Менеджер", "Администратор", "Разработчик", "Дизайнер"]
+        self.positions = self.fetch_positions()
         self.selected_position = tk.StringVar(self)
-        self.selected_position.set(positions[0])
-        self.option_menu = tk.OptionMenu(self, self.selected_position, *positions)
+        self.selected_position.set(self.positions[0][1])  # Устанавливаем первую должность как значение по умолчанию
+        self.option_menu = tk.OptionMenu(self, self.selected_position, *[pos[1] for pos in self.positions])
         self.option_menu.config(font=("Arial", 12))
         self.option_menu.pack(pady=5)
 
@@ -67,6 +69,21 @@ class RegisterPage(tk.Toplevel):
                                       **button_style)
         self.login_button.pack(pady=(10, 5))
 
+    def is_valid_email(self, email):
+        # Простая регулярная выражение для проверки формата электронной почты
+        pattern = r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$"
+        return re.match(pattern, email) is not None
+
+    def is_unique_email(self, email, conn):
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT EXISTS(SELECT 1 FROM users WHERE email = %s)", (email,))
+            exists = cursor.fetchone()[0]
+            cursor.close()
+            return not exists
+        except psycopg2.Error as e:
+            print(f"Ошибка при проверке уникальности email: {e}")
+            return False
     def toggle_password(self):
         if self.show_password.get():
             self.entry_password.config(show="")
@@ -81,37 +98,68 @@ class RegisterPage(tk.Toplevel):
         # auth_window = AuthPage(self.parent)
         # auth_window.grab_set()  # Переводим фокус на окно авторизации
         self.destroy()
+
+    def fetch_positions(self):
+        """ Загрузка должностей из базы данных """
+        conn = connect_db()
+        if conn:
+            try:
+                cursor = conn.cursor()
+                cursor.execute("SELECT id, title FROM positions ORDER BY title")
+                positions = cursor.fetchall()
+                cursor.close()
+                conn.close()
+                return positions
+            except psycopg2.Error as e:
+                print(f"Ошибка запроса к базе данных: {e}")
+                return []
+        return []
+
     def register(self):
         username = self.entry_username.get()
         email = self.entry_email.get()
         password = self.entry_password.get()
         confirm_password = self.entry_confirm_password.get()
-        position = self.selected_position.get()
+        position_title = self.selected_position.get()
+        position_id = next(pos[0] for pos in self.positions if pos[1] == position_title)
 
         if not all([username, email, password, confirm_password]):
             messagebox.showerror("Ошибка", "Пожалуйста, заполните все поля")
+            return
+
+        if not self.is_valid_email(email):
+            messagebox.showerror("Ошибка", "Введите действующий электронный адрес")
+            return
+
+        conn = connect_db()
+        if not conn:
+            messagebox.showerror("Ошибка", "Не удалось подключиться к базе данных.")
+            return
+
+        if not self.is_unique_email(email, conn):
+            messagebox.showerror("Ошибка", "Этот электронный адрес уже используется")
             return
 
         if password != confirm_password:
             messagebox.showerror("Ошибка", "Пароли не совпадают")
             return
 
-        hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')  # Хеширование пароля
+        hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode(
+            'utf-8')  # Хеширование пароля
 
-        conn = connect_db()
-        if conn:
-            try:
-                cursor = conn.cursor()
-                cursor.execute("INSERT INTO users (username, email, password, position) VALUES (%s, %s, %s, %s)",
-                               (username, email, hashed_password, position))
-                conn.commit()
-                cursor.close()
-                conn.close()
-                messagebox.showinfo("Успех", "Регистрация прошла успешно!")
-                # self.go_to_login_page() # Переводим фокус на окно авторизации
-            except psycopg2.Error as e:
-                print("Ошибка при выполнении SQL-запроса:", e)
-                messagebox.showerror("Ошибка", "Произошла ошибка при регистрации. Пожалуйста, попробуйте снова.")
+        try:
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO users (username, email, password, position_id) VALUES (%s, %s, %s, %s)",
+                           (username, email, hashed_password, position_id))
+            conn.commit()
+            cursor.close()
+            conn.close()
+            messagebox.showinfo("Успех", "Регистрация прошла успешно!")
+            self.go_to_login_page()
+        except psycopg2.Error as e:
+            print("Ошибка при выполнении SQL-запроса:", e)
+            messagebox.showerror("Ошибка", "Произошла ошибка при регистрации. Пожалуйста, попробуйте снова.")
+
 
 if __name__ == "__main__":
     app = tk.Tk()

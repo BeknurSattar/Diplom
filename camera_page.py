@@ -1,8 +1,16 @@
+import io
+import time
 import tkinter as tk
+import numpy as np
+import requests
 from PIL import Image, ImageTk
 import os
+from fpdf import FPDF
+from matplotlib import pyplot as plt
+import datetime
 from utils import *
-
+import cv2
+from cv2 import cuda
 
 # Глобальная переменная для таймера
 max_count3 = 0
@@ -21,14 +29,8 @@ class CameraPage(tk.Frame):
         self.content.pack(expand=True, fill="both")
         self.layout = 1
         self.videos = self.get_video_files()
-        self.camera_ids = {
-            1: 0,  # Camera for class 1
-            2: 'Videoes/unihub.mp4',
-            3: '',
-            4: ''  # Camera for class 2
-        }
-        self.current_videos = {}  # Словарь для управления видеопотоками по их индексам
-        self.paused = {}  # Словарь для контроля состояния паузы видеопотоков
+        self.odapi = DetectorAPI()
+
         self.get_content()
 
 
@@ -50,7 +52,7 @@ class CameraPage(tk.Frame):
         dlg_modal.transient(self.content)
         dlg_modal.grab_set()
         print(self.videos)
-        print(self.current_videos)
+
 
         actions_frame = tk.Frame(dlg_modal)
         actions_frame.pack(padx=10, pady=10)
@@ -71,7 +73,7 @@ class CameraPage(tk.Frame):
         videos_directory = "Videoes"  # Название вашей папки с видеофайлами
         if os.path.exists(videos_directory) and os.path.isdir(videos_directory):
             files = os.listdir(videos_directory)
-            for i, file in enumerate(files):
+            for i, file in enumerate(files, start=1):
                 if file.endswith(".mp4") or file.endswith(".avi"):
                     video_files[i] = os.path.join(videos_directory, file)
         return video_files
@@ -100,11 +102,16 @@ class CameraPage(tk.Frame):
                 video_label.imgtk = imgtk
                 video_label.pack(fill="both", expand=True)
 
-                remove_button = tk.Button(box, text="Удалить видео", command=lambda: self.remove_video(video_label, cap, box))
-                remove_button.pack(side="bottom")
+                remove_button = tk.Button(box, text="Убрать видео",
+                                          command=lambda: self.remove_video(video_label, cap, box))
+                remove_button.pack(side="left", padx=5)
 
-                self.update_image(cap, video_label, video_width, video_height, index)
+                # Добавим кнопку для сохранения графиков, которая будет активирована позже
+                save_button = tk.Button(box, text="Сохранить графики", command=lambda: self.create_and_save_graphs(
+                    self.people_data, self.accuracy_data, self.processing_speed_data, index), state=tk.DISABLED)
+                save_button.pack(side="left", padx=5)
 
+                self.update_image(cap, video_label, video_width, video_height, index, save_button)
 
     def calculate_video_dimensions(self, aspect_ratio, box_width, box_height):
         if aspect_ratio * box_height > box_width:
@@ -121,25 +128,32 @@ class CameraPage(tk.Frame):
         img = Image.fromarray(frame_rgb)
         return ImageTk.PhotoImage(image=img)
 
-    def update_image(self, cap, video_label, video_width, video_height, index):
+    def update_image(self, cap, video_label, video_width, video_height, index, save_button):
         global max_count3, framex3, county3, max3, avg_acc3_list, max_avg_acc3_list, max_acc3, max_avg_acc3
-        max_count3 = 0
+
         framex3 = []
-        county3 = []
+
         max3 = []
-        avg_acc3_list = []
+
         max_avg_acc3_list = []
         max_acc3 = 0
         max_avg_acc3 = 0
 
-        odapi = DetectorAPI()
+        max_count3 = 0
+        county3 = []
+        avg_acc3_list = []
         threshold = 0.7
 
         x3 = 0
 
+        people_data = []  # Список для хранения данных о количестве людей по времени
+        accuracy_data = []  # Список для хранения данных о точности определения по времени
+        processing_speed_data = []  # Список для хранения данных о скорости обработки кадров
+
         def analyze_and_update():
             global max_count3, framex3, county3, max3, avg_acc3_list, max_avg_acc3_list, max_acc3, max_avg_acc3, x3
-            x3 = 0
+            start_time = time.time()  # Засекаем время начала обработки кадра
+
             ret, frame = cap.read()
             if ret:
                 imgtk = self.create_video_image(frame, video_width, video_height)
@@ -148,9 +162,10 @@ class CameraPage(tk.Frame):
 
                 # Анализируем изображение на наличие людей
                 img_resized = cv2.resize(frame, (video_width, video_height))  # Подгоняем размер кадра под детектор
-                boxes, scores, classes, num = odapi.processFrame(img_resized)
+                boxes, scores, classes, num = self.odapi.processFrame(img_resized)
                 person = 0
                 acc = 0
+
                 for i in range(len(boxes)):
                     if classes[i] == 1 and scores[i] > threshold:
                         box = boxes[i]
@@ -165,8 +180,8 @@ class CameraPage(tk.Frame):
                     max_count3 = person
 
                 county3.append(person)
-                x3 += 1
-                framex3.append(x3)
+
+
                 if (person >= 1):
                     avg_acc3_list.append(acc / person)
                     if ((acc / person) > max_avg_acc3):
@@ -176,17 +191,107 @@ class CameraPage(tk.Frame):
 
                 start_periodic_data_insert(person, index)
 
-                for i in range(len(framex3)):
-                    max3.append(max_count3)
-                    max_avg_acc3_list.append(max_avg_acc3)
+                # Сохраняем данные о количестве людей и точности определения по времени
+                people_data.append(person)
+                accuracy_data.append(acc / person if person > 0 else 0)
+
+                # Подсчет скорости обработки
+                end_time = time.time()  # Засекаем время окончания обработки кадра
+                processing_time = end_time - start_time
+                fps = 1 / processing_time if processing_time > 0 else 0
+                processing_speed_data.append(fps)
 
                 # Повторяем анализ и обновление изображения через 10 миллисекунд
-                video_label.after(10, analyze_and_update)
+                video_label.after(33, analyze_and_update)
+            else:
+                # Создаем графики и сохраняем их
+                # Видео закончилось, активируем кнопку сохранения графиков
+                save_button.config(state=tk.NORMAL)
+                # Сохраняем данные в атрибуты класса для доступа при сохранении
+                self.people_data = people_data
+                self.accuracy_data = accuracy_data
+                self.processing_speed_data = processing_speed_data
+                cap.release()
+
+
 
         # Запускаем анализ и обновление изображения в отдельном потоке
         threading.Thread(target=analyze_and_update).start()
 
+    def create_and_save_graphs(self, people_data, accuracy_data, processing_speed_data, class_id):
+        output_directory = 'saved_graphs'
+        if not os.path.exists(output_directory):
+            os.makedirs(output_directory)
 
+        # Форматируем текущую дату и время для включения в имя файла
+        date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        # Соединяемся с базой данных для получения идентификаторов и названий типов графиков
+        conn = connect_db()
+        if conn:
+            try:
+                cursor = conn.cursor()
+                cursor.execute("SELECT id, type_name FROM graph_types;")
+                graph_types = cursor.fetchall()
+
+                # Проходим по всем типам графиков и сохраняем соответствующие файлы
+                for graph_type_id, graph_type_name in graph_types:
+                    if graph_type_name == 'people_graph':
+                        graph_filename = os.path.join(output_directory,
+                                                      f'{graph_type_name}_{class_id}_{date_str}.png')
+                        plt.figure()
+                        plt.plot(people_data)
+                        plt.title('Количество людей по времени')
+                        plt.xlabel('Время')
+                        plt.ylabel('Количество людей')
+                        plt.savefig(graph_filename)
+                        plt.close()
+
+                        # Сохраняем информацию о графике в базу данных
+                        cursor.execute(
+                            "INSERT INTO graphs (class_id, graph_type_id, graph_path, upload_date) VALUES (%s, %s, %s, %s);",
+                            (class_id, graph_type_id, graph_filename, datetime.now()))
+
+                    elif graph_type_name == 'accuracy_graph':
+                        graph_filename = os.path.join(output_directory,
+                                                      f'{graph_type_name}_{class_id}_{date_str}.png')
+                        plt.figure()
+                        plt.plot(accuracy_data)
+                        plt.title('Точность определения по времени')
+                        plt.xlabel('Время')
+                        plt.ylabel('Точность')
+                        plt.savefig(graph_filename)
+                        plt.close()
+
+                        # Сохраняем информацию о графике в базу данных
+                        cursor.execute(
+                            "INSERT INTO graphs (class_id, graph_type_id, graph_path, upload_date) VALUES (%s, %s, %s, %s);",
+                            (class_id, graph_type_id, graph_filename, datetime.now()))
+                    elif graph_type_name == 'processing_speed_graph':
+                        graph_filename = os.path.join(output_directory,
+                                                      f'{graph_type_name}_{class_id}_{date_str}.png')
+                        plt.figure()
+                        plt.plot(processing_speed_data)  # предполагаем, что у вас есть данные скорости обработки
+                        plt.title('Скорость обработки данных по времени')
+                        plt.xlabel('Время')
+                        plt.ylabel('Скорость обработки (кадры в секунду)')
+                        plt.savefig(graph_filename)
+                        plt.close()
+
+                        # Сохраняем информацию о графике в базу данных
+                        cursor.execute(
+                            "INSERT INTO graphs (class_id, graph_type_id, graph_path, upload_date) VALUES (%s, %s, %s, %s);",
+                            (class_id, graph_type_id, graph_filename, datetime.now()))
+
+                conn.commit()
+            except Exception as e:
+                print(f"Ошибка при обработке данных: {e}")
+            finally:
+                cursor.close()
+                conn.close()
+                print("Графики успешно созданы и сохранены в базу данных.")
+        else:
+            print("Не удалось подключиться к базе данных.")
     def remove_video(self, video_label, cap, box):
         cap.release()
         stop_periodic_data_insert()

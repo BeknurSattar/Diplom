@@ -21,6 +21,7 @@ def connect_db():
         print("Ошибка подключения к базе данных: ", e)
         return None
 
+data_insert_timer = None
 # Функция для вставки данных в базу данных
 def insert_data(people_count, class_id):
     """Вставляет данные о количестве людей, дате обнаружения и идентификаторе класса в базу данных."""
@@ -39,21 +40,26 @@ def insert_data(people_count, class_id):
             conn.close()
 
 # Установка периодического вставления данных
-def start_periodic_data_insert(person, class_id, interval=30):
+def start_periodic_data_insert(person, class_id, interval=5000):
     """Запускает периодическое вставление данных в базу данных."""
-    insert_data(person, class_id)
-    data_insert_timer = threading.Timer(interval, start_periodic_data_insert, args=(person, class_id))
-    data_insert_timer.start()
-    return data_insert_timer
+    global data_insert_timer
 
-# Глобальная переменная для таймера
-data_insert_timer = None
+    # Останавливаем предыдущий таймер, если он существует
+    if data_insert_timer is not None:
+        data_insert_timer.cancel()
+
+    # Вставляем данные
+    insert_data(person, class_id)
+
+    # Запускаем таймер снова
+    data_insert_timer = threading.Timer(interval / 1000.0, start_periodic_data_insert, args=(person, class_id, interval))
+    data_insert_timer.start()
 
 def stop_periodic_data_insert():
     global data_insert_timer
     if data_insert_timer is not None:
         data_insert_timer.cancel()
-
+        data_insert_timer = None
 def hash_password(password):
     # Генерируем соль для хеширования
     salt = bcrypt.gensalt()

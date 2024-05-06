@@ -1,5 +1,7 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
+
+import bcrypt
 import psycopg2
 from PIL import Image, ImageTk, ImageOps, ImageDraw
 from utils import connect_db
@@ -15,28 +17,66 @@ class ProfilePage(tk.Frame):
     def create_widgets(self):
         if self.user_id:
             self.load_user_profile()
+            self.add_change_password_button()  # Добавляем кнопку для изменения пароля
         else:
             tk.Label(self, text="Ошибка: Не удалось загрузить профиль пользователя.", font=("Arial", 16)).pack(pady=20)
+
+    def add_change_password_button(self):
+        change_password_button = tk.Button(self, text="Изменить пароль", command=self.change_password,
+                                           font=("Arial", 12))
+        change_password_button.pack(pady=10)
+
+    def change_password(self):
+        new_password = simpledialog.askstring("Новый пароль", "Введите новый пароль:", parent=self, show='*')
+        confirm_password = simpledialog.askstring("Подтверждение пароля", "Подтвердите новый пароль:", parent=self,
+                                                  show='*')
+
+        if new_password and new_password == confirm_password:
+            self.update_password_in_db(new_password)
+        else:
+            messagebox.showerror("Ошибка", "Пароли не совпадают, пожалуйста, попробуйте снова.")
+
+
+
+    def update_password_in_db(self, new_password):
+        hashed_password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')  # Хеширование пароля
+
+        conn = connect_db()
+        if conn:
+            try:
+                cursor = conn.cursor()
+                cursor.execute("UPDATE users SET password = %s WHERE user_id = %s", (hashed_password, self.user_id))
+                conn.commit()
+                cursor.close()
+                conn.close()
+                messagebox.showinfo("Успех", "Пароль успешно изменен.")
+            except psycopg2.Error as e:
+                print(f"Ошибка при обновлении пароля в базе: {e}")
+                messagebox.showerror("Ошибка", "Не удалось обновить пароль.")
+        else:
+            messagebox.showerror("Ошибка", "Не удалось подключиться к базе данных.")
 
     def load_user_profile(self):
         conn = connect_db()
         if conn:
             try:
                 cursor = conn.cursor()
-                cursor.execute("SELECT username, email, position, image_path FROM users WHERE user_id = %s", (self.user_id,))
+                # Измените запрос, чтобы получить наименование должности через JOIN
+                cursor.execute("""
+                    SELECT u.username, u.email, p.title as position, u.image_path
+                    FROM users u
+                    JOIN positions p ON u.position_id = p.id
+                    WHERE u.user_id = %s
+                """, (self.user_id,))
                 user_info = cursor.fetchone()
                 cursor.close()
                 conn.close()
 
                 if user_info:
+                    self.display_user_image(self.image_path or "Images/icon.jpg")
                     username, email, position, self.image_path = user_info
-                    try:
-                        self.display_user_image(self.image_path or "Images/icon.jpg")
-                        self.display_user_info(username, email, position)
+                    self.display_user_info(username, email, position)
 
-                    except IOError as e:
-                        print(f"Ошибка загрузки изображения профиля: {e}")
-                        tk.Label(self, text="Не удалось загрузить изображение профиля.", font=("Arial", 16)).pack(pady=10)
                 else:
                     tk.Label(self, text="Профиль не найден.", font=("Arial", 16)).pack(pady=20)
             except psycopg2.Error as e:

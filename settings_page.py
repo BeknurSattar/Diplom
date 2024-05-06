@@ -2,17 +2,32 @@ import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
 
 from auth_page import AuthPage
-
+from translations import translations
 
 class SettingsPage(tk.Frame):
     def __init__(self, parent):
         super().__init__(parent)
         self.parent = parent
+        self.current_language = 'ru'
         self.configure(bg="#f0f0f0")
         self.content = tk.Frame(self, bg="#f0f0f0")
         self.content.pack(expand=True, fill="both", padx=20, pady=20)
         self.generate_buttons()
 
+    def change_language(self, event):
+        selected_language = self.language_dropdown.get()
+        if selected_language == "English":
+            self.set_language('en')
+        else:
+            self.set_language('ru')
+
+    def set_language(self, language):
+        self.current_language = language
+        # Обновление текста на всех кнопках и метках
+        self.theme_button.config(text=translations[language]['change_theme'])
+        self.notifications_button.config(text=translations[language]['toggle_notifications'])
+        self.language_label.config(text=translations[language]['select_language'])
+        self.exit_button.config(text=translations[language]['exit'])
     def change_theme(self):
         # Изменение темы для всего приложения
         new_theme = "dark" if self.parent.cget('bg') == "#f0f0f0" else "light"
@@ -54,19 +69,23 @@ class SettingsPage(tk.Frame):
         # Здесь должен быть ваш код для инициализации и отображения окна авторизации
 
     def generate_buttons(self):
-        theme_button = tk.Button(self.content, text="Сменить тему", command=self.change_theme, bg="#1976D2", fg="white")
-        theme_button.pack(fill="x", pady=(0, 10), ipady=5)
+        self.theme_button = tk.Button(self.content, command=self.change_theme, bg="#1976D2", fg="white")
+        self.theme_button.pack(fill="x", pady=(0, 10), ipady=5)
 
-        notifications_button = tk.Button(self.content, text="Настройки уведомлений", command=self.toggle_notifications, bg="#1976D2", fg="white")
-        notifications_button.pack(fill="x", pady=(0, 10), ipady=5)
+        self.notifications_button = tk.Button(self.content, command=self.toggle_notifications, bg="#1976D2", fg="white")
+        self.notifications_button.pack(fill="x", pady=(0, 10), ipady=5)
 
-        language_label = tk.Label(self.content, text="Выберите язык:", bg="#f0f0f0")
-        language_label.pack()
+        self.language_label = tk.Label(self.content, bg="#f0f0f0")
+        self.language_label.pack()
 
-        language_options = ["Русский", "Английский"]
+        language_options = ["Русский", "English"]
         self.language_dropdown = ttk.Combobox(self.content, values=language_options, state="readonly")
         self.language_dropdown.pack(fill="x", pady=(0, 10), ipady=5)
         self.language_dropdown.bind("<<ComboboxSelected>>", self.change_language)
 
-        exit_button = tk.Button(self.content, text="Выйти", command=self.safe_exit, bg="#1976D2", fg="white")
-        exit_button.pack(fill="x", ipady=5)
+        self.exit_button = tk.Button(self.content, command=self.safe_exit, bg="#1976D2", fg="white")
+        self.exit_button.pack(fill="x", ipady=5)
+
+        # Применение начального языка
+        self.set_language(self.current_language)
+
