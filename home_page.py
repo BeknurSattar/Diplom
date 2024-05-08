@@ -4,22 +4,36 @@ from tkinter import ttk, messagebox
 from PIL import Image, ImageTk
 import psycopg2
 from utils import connect_db
-
+from translations import translations
 class HomePage(tk.Frame):
     # Конструктор класса HomePage
-    def __init__(self, parent, *args, **kwargs):
+    def __init__(self, parent, app, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         now = datetime.datetime.now()
+        self.app = app  # Ссылка на главное приложение
         # Определение приветствия в зависимости от времени суток
-        greeting = "Доброе утро" if 5 <= now.hour < 12 else "Добрый день" if 12 <= now.hour < 18 else "Добрый вечер"
 
         # Установка и отображение заголовка страницы
-        home_label = tk.Label(self, text=f"{greeting}, добро пожаловать на главную страницу", font=("Arial", 16),
+        self.home_label = tk.Label(self,  font=("Arial", 16),
                               bg="#ffffff")
-        home_label.pack(pady=20)
+        self.home_label.pack(pady=20)
 
         # Инициализация содержимого страницы
         self.display_content()
+
+    translation_key = 'home'
+    def set_language(self, language):
+        now = datetime.datetime.now()
+        # Обновляем приветствие в зависимости от времени суток и выбранного языка
+        greeting = translations[language]["good_morning"] if 5 <= now.hour < 12 else \
+            translations[language]["good_afternoon"] if 12 <= now.hour < 18 else \
+                translations[language]["good_evening"]
+
+        self.home_label.config(text=f"{greeting}, {translations[language]['welcome_home']}")
+        # Обновление текста на информационных карточках
+        self.people_card.config(text=f"{translations[language]['total_detected_people']}: {self.fetch_total_people()}")
+
+
 
     def display_content(self):
         # Размещение фреймов для информационных карточек, графиков и данных
@@ -40,12 +54,12 @@ class HomePage(tk.Frame):
     def display_info_cards(self, frame):
         # Отображение информационной карточки с общим количеством обнаруженных людей
         try:
-            total_people = self.fetch_total_people()
-            people_card = tk.Label(frame, text=f"Общее количество обнаруженных людей: {total_people}", font=("Arial", 12),
+            self.people_card = tk.Label(frame, font=("Arial", 12),
                                    bg="lightgrey")
-            people_card.pack(side=tk.LEFT, padx=10, pady=10, fill="both", expand=True)
+            self.people_card.pack(side=tk.LEFT, padx=10, pady=10, fill="both", expand=True)
         except Exception as e:
-            messagebox.showerror("Ошибка", f"Ошибка при получении данных: {e}")
+            error_msg = translations[self.app.current_language]['fetch_data_error'].format(error=e)
+            messagebox.showerror(translations[self.app.current_language]['error'], error_msg)
 
     def fetch_total_people(self):
         # Извлечение общего количества обнаруженных людей из базы данных
@@ -57,41 +71,59 @@ class HomePage(tk.Frame):
                     total_people = cur.fetchone()[0]
                 return total_people if total_people else 0
             except psycopg2.Error as e:
-                messagebox.showerror("Ошибка базы данных", f"Ошибка запроса: {e}")
+                error_msg = translations[self.app.current_language]['database_error_message'].format(error=e)
+                messagebox.showerror(translations[self.app.current_language]['database_error'], error_msg)
             finally:
                 conn.close()
         else:
-            messagebox.showerror("Ошибка подключения", "Не удалось подключиться к базе данных.")
-
+            messagebox.showerror(translations[self.app.current_language]['connection_error'],
+                                 translations[self.app.current_language]['connection_error'])
     def display_latest_graphs(self, frame):
         # Отображение последних графиков
         try:
             paths = self.fetch_latest_graphs()
-            for path in paths:
-                self.display_graph(frame, path)
+            # Создаем фрейм для центрирования графиков внутри родительского фрейма
+            center_frame = tk.Frame(frame)
+            center_frame.pack(fill="both", expand=True)
+
+            if paths:
+                for path in paths:
+                    self.display_graph(center_frame, path)
+                # Распределение графиков по центру
+                center_frame.pack(side="top", fill="x", expand=True)
+            else:
+                # Если нет графиков для отображения, показываем сообщение
+                label = tk.Label(center_frame, text=translations[self.app.current_language]['no_graphs_found'],
+                                 font=("Arial", 12))
+                label.pack(side="top", pady=20)
         except Exception as e:
-            messagebox.showerror("Ошибка", f"Ошибка при отображении графиков: {e}")
+            error_msg = translations[self.app.current_language]['graph_error'].format(error=e)
+            messagebox.showerror(translations[self.app.current_language]['error'], error_msg)
 
     def fetch_latest_graphs(self):
-        # Извлечение путей к последним графикам из базы данных
+        # Извлечение путей к последним графикам каждого класса из базы данных
         conn = connect_db()
         if conn:
             try:
                 with conn.cursor() as cur:
                     cur.execute("""
-                        SELECT graph_path FROM graphs
-                        ORDER BY upload_date DESC
-                        LIMIT 3
+                        SELECT graph_path
+                        FROM (
+                            SELECT graph_path, graph_type_id, RANK() OVER (PARTITION BY graph_type_id ORDER BY upload_date DESC) as rk
+                            FROM graphs
+                        ) ranked_graphs
+                        WHERE rk = 1
                     """)
                     rows = cur.fetchall()
                     return [row[0] for row in rows]
             except psycopg2.Error as e:
-                messagebox.showerror("Ошибка базы данных", f"Ошибка запроса: {e}")
+                error_msg = translations[self.app.current_language]['database_query_error'].format(error=e)
+                messagebox.showerror(translations[self.app.current_language]['database_error'], error_msg)
             finally:
                 conn.close()
         else:
-            messagebox.showerror("Ошибка подключения", "Не удалось подключиться к базе данных.")
-
+            messagebox.showerror(translations[self.app.current_language]['error_connecting_to_database'],
+                                 translations[self.app.current_language]['connection_error'])
 
     def display_graph(self, frame, path):
         # Загрузка и отображение графика
@@ -103,16 +135,15 @@ class HomePage(tk.Frame):
             label.image = imgtk
             label.pack(side=tk.LEFT, padx=10)
         except Exception as e:
-            print("Ошибка при загрузке изображения: ", e)
+            print(translations[self.app.current_language]['loading_image_error'].format(error=e))
 
     def display_latest_data(self, frame):
-        # Отображение последних данных о количестве людей по классам
         conn = connect_db()
         if conn:
             try:
                 tree = ttk.Treeview(frame, columns=('class_id', 'people_count'), show='headings')
-                tree.heading('class_id', text='ID класса')
-                tree.heading('people_count', text='Количество людей')
+                tree.heading('class_id', text=translations[self.app.current_language]['class_id'])
+                tree.heading('people_count', text=translations[self.app.current_language]['people_count'])
                 with conn.cursor() as cur:
                     cur.execute("""
                         SELECT class_id, MAX(people_count) FROM occupancy
@@ -123,8 +154,10 @@ class HomePage(tk.Frame):
                         tree.insert('', tk.END, values=row)
                 tree.pack()
             except psycopg2.Error as e:
-                messagebox.showerror("Ошибка базы данных", f"Ошибка запроса: {e}")
+                error_msg = translations[self.app.current_language]['database_query_error'].format(error=e)
+                messagebox.showerror(translations[self.app.current_language]['error'], error_msg)
             finally:
                 conn.close()
         else:
-            messagebox.showerror("Ошибка подключения", "Не удалось подключиться к базе данных.")
+            messagebox.showerror(translations[self.app.current_language]['error'],
+                                 translations[self.app.current_language]['connection_error'])
