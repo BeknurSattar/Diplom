@@ -25,6 +25,8 @@ class Page(tk.Tk):
         self.bind("<F11>", self.toggle_fullscreen)
         self.bind("<Escape>", self.end_fullscreen)
 
+        self.current_theme_bg = "#f0f0f0"
+        self.current_theme_fg = "black"
         self.configure(bg="#f0f0f0")
         self.check_authentication()  # Проверка статуса аутентификации пользователя
 
@@ -50,6 +52,20 @@ class Page(tk.Tk):
         # Обновляем страницы
         self.update_body_content()
 
+    def apply_theme_to_all(self, bg, fg):
+        self.current_theme_bg = bg  # сохраняем текущие цвета темы
+        self.current_theme_fg = fg
+        self.apply_theme_to_all_for_child(self, bg, fg)  # применяем тему ко всему приложению
+
+    def apply_theme_to_all_for_child(self, widget, bg, fg):
+        try:
+            widget.configure(bg=bg)
+            if hasattr(widget, 'configure') and 'fg' in widget.keys():
+                widget.configure(fg=fg)
+        except tk.TclError:
+            pass
+        for child in widget.winfo_children():
+            self.apply_theme_to_all_for_child(child, bg, fg)
     def check_authentication(self):
         # Проверяем, авторизован ли пользователь
         if not self.is_authenticated:
@@ -153,13 +169,19 @@ class Page(tk.Tk):
                 page = ProfilePage(self.body_frame, self.user_id)  # Передача user_id
                 page.set_language(self.current_language)  # Установка языка для текущей страницы
                 page.pack(fill="both", expand=True)
+
+                # Применяем текущую тему к новой странице
+                self.apply_theme_to_all_for_child(page, self.current_theme_bg, self.current_theme_fg)
             except Exception as e:
                 messagebox.showerror(translations[self.current_language]['error'], translations[self.current_language]['profile_creation_error'].format(error=e))
         else:
             try:
-                page = self.pages[self.selected_index](self.body_frame, self)
+                page = self.pages[self.selected_index](self.body_frame, self, self.user_id)
                 page.set_language(self.current_language)  # Установка языка для текущей страницы
                 page.pack(fill="both", expand=True)
+
+                # Применяем текущую тему к новой странице
+                self.apply_theme_to_all_for_child(page, self.current_theme_bg, self.current_theme_fg)
             except Exception as e:
                 messagebox.showerror(translations[self.current_language]['error'], translations[self.current_language]['page_creation_error'].format(error=e))
 

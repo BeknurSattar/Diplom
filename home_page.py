@@ -7,10 +7,11 @@ from utils import connect_db
 from translations import translations
 class HomePage(tk.Frame):
     # Конструктор класса HomePage
-    def __init__(self, parent, app, *args, **kwargs):
+    def __init__(self, parent, app, user_id=None, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         now = datetime.datetime.now()
         self.app = app  # Ссылка на главное приложение
+        self.user_id = user_id
         # Определение приветствия в зависимости от времени суток
 
         # Установка и отображение заголовка страницы

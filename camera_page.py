@@ -14,28 +14,22 @@ from utils import *
 import cv2
 from cv2 import cuda
 
-# Глобальная переменная для управления состоянием видео обработки
-max_count3 = 0
-framex3 = []
-county3 = []
-max3 = []
-avg_acc3_list = []
-max_avg_acc3_list = []
-max_acc3 = 0
-max_avg_acc3 = 0
 class CameraPage(tk.Frame):
     """Страница управления видеокамерами и обработкой видео потоков."""
-    def __init__(self, parent, app):
+    def __init__(self, parent, app, user_id=None):
         super().__init__(parent)
         self.parent = parent
         self.content = tk.Frame(self)
+        self.user_id = user_id
         self.app = app
         self.current_language = 'ru'
         self.content.pack(expand=True, fill="both")
         self.layout = 1
-        self.videos = self.get_video_files()  # Загрузка списка доступных видео файлов
+        # Загрузка списка доступных видео файлов с учетом должности пользователя
+        self.videos = self.get_video_files_for_user()
+        self.videos1 = self.get_video_files()
         self.odapi = DetectorAPI()  # Подключение API для обнаружения объектов в видео
-
+        self.get_video_files()
         self.get_content()
 
     translation_key = 'camera'
@@ -67,6 +61,7 @@ class CameraPage(tk.Frame):
         if hasattr(self, 'camera_buttons'):
             for i, btn in self.camera_buttons.items():
                 btn.config(text=translations[language]['camera_btn'].format(number=i))
+
     def back_to_menu(self):
         """Возвращение в меню."""
         self.content.destroy()  # Уничтожаем текущее содержимое
@@ -85,6 +80,7 @@ class CameraPage(tk.Frame):
         dlg_modal.transient(self.content)
         dlg_modal.grab_set()
         print(self.videos)
+        print(self.videos1)
 
 
         actions_frame = tk.Frame(dlg_modal)
@@ -102,14 +98,90 @@ class CameraPage(tk.Frame):
         dlg_modal.protocol("WM_DELETE_WINDOW", close_dlg)
 
     def get_video_files(self):
-        """Получение списка доступных видео файлов из директории."""
+        """Сканирует директорию на наличие видео файлов и добавляет их в базу данных."""
         video_files = {}
         videos_directory = "Videoes"  # Название вашей папки с видеофайлами
         if os.path.exists(videos_directory) and os.path.isdir(videos_directory):
             files = os.listdir(videos_directory)
+            conn = connect_db()  # Предполагается, что есть функция для подключения к БД
+            cursor = conn.cursor()
             for i, file in enumerate(files, start=1):
                 if file.endswith(".mp4") or file.endswith(".avi"):
-                    video_files[i] = os.path.join(videos_directory, file)
+                    video_path = os.path.join(videos_directory, file)
+                    video_files[i] = video_path
+                    # Добавление файла в базу данных, если он еще не добавлен
+                    try:
+                        cursor.execute(
+                            "INSERT INTO cameras (name, path) VALUES (%s, %s) ON CONFLICT (path) DO NOTHING;",
+                            (file, video_path)
+                        )
+                        conn.commit()
+                    except psycopg2.Error as e:
+                        print("Ошибка при добавлении видео файла в базу данных:", e)
+            cursor.close()
+            conn.close()
+        return video_files
+
+    def get_user_position_id(self):
+        """Получение ID должности пользователя из базы данных."""
+        if self.user_id is None:
+            print("user_id не установлен.")
+            return None
+
+        position_id = None
+        try:
+            conn = connect_db()
+            if conn is None:
+                print("Не удалось подключиться к базе данных.")
+                return None
+
+            cursor = conn.cursor()
+            cursor.execute("SELECT position_id FROM users WHERE user_id = %s;", (self.user_id,))
+            result = cursor.fetchone()
+            if result:
+                position_id = result[0]
+            else:
+                print(f"Не найден position_id для user_id {self.user_id}.")
+            cursor.close()
+        except Exception as e:
+            print(f"Ошибка при получении ID должности: {e}")
+        finally:
+            if conn:
+                conn.close()
+
+        return position_id
+
+    # Проверка доступных камер для пользователя
+    def get_video_files_for_user(self):
+        """Получение списка доступных видео файлов из базы данных в зависимости от должности пользователя."""
+        video_files = {}
+        position_id = self.get_user_position_id()  # Получаем ID должности пользователя
+
+        if position_id is None:
+            print("Не удалось получить ID должности пользователя.")
+            return video_files
+
+        try:
+            conn = connect_db()
+            if conn is None:
+                print("Не удалось подключиться к базе данных.")
+                return video_files
+
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT c.id, c.path
+                FROM cameras c
+                JOIN camera_permissions cp ON c.id = cp.camera_id
+                WHERE cp.position_id = %s;
+                """, (position_id,))
+            video_files = {row[0]: row[1] for row in cursor.fetchall()}  # Используем строковый ключ для ID
+            cursor.close()
+        except Exception as e:
+            print(f"Ошибка при получении доступных видео: {e}")
+        finally:
+            if conn:
+                conn.close()
+
         return video_files
 
     def show_video_in_box(self, index, box, dlg_modal):
@@ -324,7 +396,7 @@ class CameraPage(tk.Frame):
 
     def create_initial_box_view(self, box):
         """Создание начального вида контейнера для видео."""
-        btn = tk.Button(box, width=15, height=2, font=("Arial", 12), command=lambda b=box: self.open_dlg_modal(b))
+        btn = tk.Button(box, text=translations[self.current_language]['select_camera'], width=15, height=2, font=("Arial", 12), command=lambda b=box: self.open_dlg_modal(b))
         btn.pack(expand=True, fill='both')
 
     def set_layout(self, layout):

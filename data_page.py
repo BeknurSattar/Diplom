@@ -10,10 +10,11 @@ import io
 from PIL import Image, ImageTk
 
 class DataPage(tk.Frame):
-    def __init__(self, parent, app):
+    def __init__(self, parent, app, user_id=None):
         super().__init__(parent)
         self.parent = parent  # Ссылка на родительский виджет
         self.app = app  # Ссылка на главное приложение
+        self.user_id = user_id
         self.content = tk.Frame(self)  # Основная рамка для содержимого
         self.content.pack(expand=True, fill="both")
         self.buttons = {}  # Словарь для хранения кнопок
@@ -155,25 +156,60 @@ class DataPage(tk.Frame):
                            command=lambda i=index: self.show_class_data(i))
         self.buttons[index] = button  # Сохраняем ссылку на кнопку
         return button
+    def get_user_position_id(self):
+        """Получение ID должности пользователя из базы данных."""
+        if self.user_id is None:
+            print("user_id не установлен.")
+            return None
+
+        position_id = None
+        try:
+            conn = connect_db()
+            if conn is None:
+                print("Не удалось подключиться к базе данных.")
+                return None
+
+            cursor = conn.cursor()
+            cursor.execute("SELECT position_id FROM users WHERE user_id = %s;", (self.user_id,))
+            result = cursor.fetchone()
+            if result:
+                position_id = result[0]
+            else:
+                print(f"Не найден position_id для user_id {self.user_id}.")
+            cursor.close()
+        except Exception as e:
+            print(f"Ошибка при получении ID должности: {e}")
+        finally:
+            if conn:
+                conn.close()
+
+        return position_id
 
     def generate_buttons(self):
-        """Генерация кнопок для аудиторий на основе данных из базы."""
+        """Генерация кнопок для аудиторий на основе доступных данных по должности пользователя."""
         try:
             self.conn = connect_db()
             cur = self.conn.cursor()
-            cur.execute("SELECT DISTINCT class_id FROM occupancy ORDER BY class_id;")
+            # Запрос, который возвращает class_id для аудиторий, доступных данной должности
+            cur.execute("""
+                SELECT DISTINCT o.class_id 
+                FROM occupancy o
+                JOIN camera_permissions cp ON o.class_id = cp.camera_id
+                WHERE cp.position_id = %s
+                ORDER BY o.class_id;
+            """, (self.get_user_position_id(),))
             class_ids = cur.fetchall()
             for class_id in class_ids:
-                button = self.create_button(class_id[0] + 1)
+                button = self.create_button(class_id[0])
                 button.pack(anchor="w", pady=(5, 0), padx=10, fill="x")
             cur.close()
             self.conn.close()
         except psycopg2.Error as e:
-            messagebox.showerror(translations[self.current_language]['error'], translations[self.app.current_language]['connection_database_error'].format(error=e))
+            messagebox.showerror(translations[self.current_language]['error'],
+                                 translations[self.app.current_language]['connection_database_error'].format(error=e))
         finally:
             if self.conn:
                 self.conn.close()
-
 
     def get_content(self):
         """Получение контента страницы."""

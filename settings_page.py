@@ -5,10 +5,11 @@ from auth_page import AuthPage
 from translations import translations
 
 class SettingsPage(tk.Frame):
-    def __init__(self, parent, app):
+    def __init__(self, parent, app, user_id=None):
         super().__init__(parent)
         self.parent = parent
         self.app = app  # Ссылка на главное приложение
+        self.user_id = user_id
         self.current_language = 'ru'  # Устанавливаем русский язык по умолчанию
         self.configure(bg="#f0f0f0")
         self.content = tk.Frame(self, bg="#f0f0f0")
@@ -29,12 +30,12 @@ class SettingsPage(tk.Frame):
         self.language_label.config(text=translations[language]['select_language'])
         self.exit_button.config(text=translations[language]['exit'])
         # Обновляем текст на других страницах (если это необходимо)
+
     def change_theme(self):
-        # Изменение темы для всего приложения
-        new_theme = "dark" if self.parent.cget('bg') == "#f0f0f0" else "light"
-        new_bg = "#303030" if new_theme == "dark" else "#f0f0f0"
+        new_theme = "dark" if self.app.cget('bg') == "#f0f0f0" else "light"
+        new_bg = "#1976D2" if new_theme == "dark" else "#6A1B9A"
         new_fg = "white" if new_theme == "dark" else "black"
-        self.apply_theme_to_all(self.parent, new_bg, new_fg)
+        self.app.apply_theme_to_all(new_bg, new_fg)
 
     def apply_theme_to_all(self, widget, bg, fg):
         # Устанавливаем цвет фона для всех виджетов, которые его поддерживают
@@ -79,7 +80,7 @@ class SettingsPage(tk.Frame):
         self.notifications_button = tk.Button(self.content, command=self.toggle_notifications, bg="#1976D2", fg="white")
         self.notifications_button.pack(fill="x", pady=(0, 10), ipady=5)
 
-        self.language_label = tk.Label(self.content, text="Select Language:", bg="#f0f0f0")
+        self.language_label = tk.Label(self.content, bg="#f0f0f0")
         self.language_label.pack()
 
         language_options = ["ru", "en", "kz"]
