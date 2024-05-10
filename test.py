@@ -1,34 +1,75 @@
 import tkinter as tk
 from tkinter import messagebox
+import shelve
+import os
+from datetime import datetime, timedelta
 from PIL import Image, ImageTk
-from translations import translations
-from home_page import HomePage
-from data_page import DataPage
-from camera_page import CameraPage
-from settings_page import SettingsPage
-from profile_page import ProfilePage
-from auth_page import AuthPage
+from Helps.translations import translations
+from pages.home_page import HomePage
+from pages.data_page import DataPage
+from pages.camera_page import CameraPage
+from pages.settings_page import SettingsPage
+from pages.profile_page import ProfilePage
+from pages.auth_page import AuthPage
+from Helps.utils import *
 
 class Page(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("AnaLiz")  # Установка названия окна
         self.geometry("800x600")  # Установка размеров окна
-        self.full_screen = True  # Установка цвета фона
-        self.translations = translations
-        self.current_language = 'ru'  # Устанавливаем русский язык по умолчанию
-        # Состояние аутентификации пользователя
-        self.is_authenticated = False
-        self.selected_index = 0  # Индекс выбранной вкладки в навигации
-
         self.full_screen = False
         self.bind("<F11>", self.toggle_fullscreen)
         self.bind("<Escape>", self.end_fullscreen)
-
         self.current_theme_bg = "#f0f0f0"
         self.current_theme_fg = "black"
         self.configure(bg="#f0f0f0")
-        self.check_authentication()  # Проверка статуса аутентификации пользователя
+
+        # Инициализация пути к директории сессии
+        self.session_dir = os.path.join(os.path.expanduser('~'), 'AnaLizSessions')
+        if not os.path.exists(self.session_dir):
+            os.makedirs(self.session_dir)
+
+        self.translations = translations
+        self.current_language = 'ru'  # Устанавливаем русский язык по умолчанию
+        self.is_authenticated = False
+        self.user_id = None  # Инициализация user_id с None
+        # Состояние аутентификации пользователя
+
+        self.selected_index = 0  # Индекс выбранной вкладки в навигации
+
+        # Попытка загрузить активную сессию, и если она есть, то не требовать повторной аутентификации
+        if not self.load_session_from_db():
+            self.check_authentication()
+        else:
+            self.create_widgets()
+
+        # Обработка закрытия окна
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
+
+    def on_close(self):
+        """Обработчик закрытия окна."""
+        self.save_session()  # Сохранение сеанса перед закрытием
+        self.destroy()  # Закрытие приложения
+
+    def save_session(self):
+        """Сохраняет текущее состояние сессии в базу данных PostgreSQL."""
+        conn = None
+        try:
+            conn = connect_db()
+            cur = conn.cursor()
+            # Подготовка и выполнение запроса на вставку данных сессии
+            cur.execute(
+                "INSERT INTO sessions (user_id, authenticated, language, last_access) VALUES (%s, %s, %s, %s)",
+                (self.user_id, self.is_authenticated, self.current_language, datetime.now())
+            )
+            conn.commit()  # Подтверждение изменений
+            cur.close()
+        except psycopg2.DatabaseError as error:
+            print("Ошибка базы данных:", error)
+        finally:
+            if conn is not None:
+                conn.close()
 
     # Дополнительные функции для управления полноэкранным режимом (при желании):
     def toggle_fullscreen(self, event=None):
@@ -66,32 +107,74 @@ class Page(tk.Tk):
             pass
         for child in widget.winfo_children():
             self.apply_theme_to_all_for_child(child, bg, fg)
-    def check_authentication(self):
-        # Проверяем, авторизован ли пользователь
-        if not self.is_authenticated:
-            try:
-                # Если не авторизован, открываем окно авторизации
-                login_window = AuthPage(self)  # Создание окна аутентификации
-                login_window.attributes('-topmost', True)  # Установка окна аутентификации поверх других окон
 
-                self.wait_window(login_window)  # Ожидание закрытия окна аутентификации
+    def load_session_from_db(self):
+        """Загружает последнюю активную сессию пользователя из базы данных."""
+        conn = None
+        try:
+            conn = connect_db()
+            cur = conn.cursor()
+            cur.execute("SELECT user_id, authenticated, language FROM sessions ORDER BY last_access DESC LIMIT 1")
+            result = cur.fetchone()
 
-                # После закрытия окна авторизации, проверяем результат
-                if login_window.is_authenticated:
-                    self.user_id = login_window.user_id
-                    self.is_authenticated = True
-                    self.create_widgets()  # Создание виджетов интерфейса
-                    self.current_language = login_window.selected_language  # Установка языка из AuthPage
-                    self.set_language(self.current_language)  # Обновляем язык интерфейса
-                    self.lift()  # Поднимаем окно приложения на передний план
-                    self.attributes('-topmost', False)
-                else:
-                    self.destroy()  # Закрытие приложения, если аутентификация не пройдена
-            except Exception as e:
-                messagebox.showerror(translations[self.current_language]['error'], translations[self.current_language]['authentication_error'].format(error=e))
-                self.destroy()
-        else:
+            if result:
+                self.user_id, self.is_authenticated, self.current_language = result
+                if self.is_authenticated:
+                    return True
+            return False
+        except psycopg2.DatabaseError as error:
+            print("Ошибка базы данных:", error)
+            return False
+        finally:
+            if conn:
+                conn.close()
+
+    def logout(self):
+        """Очищает сессию и перезапускает приложение для новой аутентификации."""
+        self.is_authenticated = False
+        self.save_session()  # Обновляем сессию в базе данных перед выходом
+        self.restart()
+
+    def restart(self):
+        """Перезапускает интерфейс пользователя, начиная с окна авторизации."""
+        self.destroy()  # Закрываем текущее окно
+        self.__init__()  # Пересоздаём окно приложения
+    def show_login_window(self):
+        login_window = AuthPage(self)
+        login_window.attributes('-topmost', True)
+        self.wait_window(login_window)
+        if login_window.is_authenticated:
+            self.user_id = login_window.user_id
+            self.is_authenticated = True
+            self.current_language = login_window.selected_language
+            self.set_language(self.current_language)
             self.create_widgets()
+            self.lift()
+            self.attributes('-topmost', False)
+        else:
+            self.destroy()
+
+    def check_authentication(self):
+
+            # Попытка загрузить данные сессии из базы данных
+                try:
+                    login_window = AuthPage(self)  # Создание окна аутентификации
+                    login_window.attributes('-topmost', True)  # Установка окна аутентификации поверх других окон
+                    self.wait_window(login_window)  # Ожидание закрытия окна аутентификации
+                    if login_window.is_authenticated:
+                        self.user_id = login_window.user_id
+                        self.is_authenticated = True
+                        self.create_widgets()
+                        self.set_language(login_window.selected_language)  # Установка языка из AuthPage
+                        self.lift()  # Поднимаем окно приложения на передний план
+                        self.attributes('-topmost', False)
+                    else:
+                        self.destroy()  # Закрытие приложения, если аутентификация не пройдена
+                except Exception as e:
+                    messagebox.showerror(translations[self.current_language]['error'],
+                                         translations[self.current_language]['authentication_error'].format(error=e))
+                    self.destroy()
+
 
     def create_widgets(self):
         # Создание элементов интерфейса
@@ -156,7 +239,7 @@ class Page(tk.Tk):
         # Запрашиваем подтверждение выхода
         if messagebox.askokcancel(translations[self.current_language]['exit'], translations[self.current_language]['confirm_exit']):
             # Если пользователь подтвердил выход, перекидываем на окно авторизации
-            self.is_authenticated = False
+            self.save_session()  # Save session before exiting
             self.destroy()
 
     def update_body_content(self):
