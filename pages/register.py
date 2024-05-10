@@ -96,6 +96,7 @@ class RegisterPage(tk.Toplevel):
         except psycopg2.Error as e:
             print(f"Ошибка при проверке уникальности email: {e}")
             return False
+
     def toggle_password(self):
         """Переключение видимости пароля."""
         if self.show_password.get():

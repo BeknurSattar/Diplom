@@ -49,30 +49,6 @@ class DataPage(tk.Frame):
             self.back_button.config(text=translations[language]['back_to_menu'])
         self.update_idletasks()  # Обновление интерфейса
 
-    def fetch_and_display_data(self, class_id):
-        """Получение и отображение данных."""
-        try:
-            self.conn = connect_db()
-            cur = self.conn.cursor()
-            # Запрос данных о последних 10 детекциях по class_id
-            cur.execute(
-                "SELECT detection_date, people_count FROM occupancy WHERE class_id = %s ORDER BY detection_date DESC LIMIT 10;",
-                (class_id-1,))
-            rows = cur.fetchall()
-
-            display_text = f"{translations[self.app.current_language]['last_10_detections'].format(class_id=class_id)}:\n\n"
-            for row in rows:
-                display_text += f"{translations[self.app.current_language]['Datae']}: {row[0]}, {translations[self.app.current_language]['Caounte']}: {row[1]}\n"
-            self.data_text.delete(1.0, tk.END)
-            self.data_text.insert(tk.END, display_text)
-            cur.close()
-            self.conn.close()
-        except psycopg2.Error as e:
-            messagebox.showerror(translations[self.app.current_language]['database_error'], translations[self.app.current_language]['fetch_data_error'].format(error=e))
-        finally:
-            if self.conn:
-                self.conn.close()
-
     def show_class_data(self, class_id):
         """Отображение данных класса или графиков."""
         self.content.destroy()
@@ -113,6 +89,30 @@ class DataPage(tk.Frame):
         self.back_button = tk.Button(self.content, text=translations[self.current_language]['back_to_menu'],
                                      command=self.back_to_menu)
         self.back_button.pack(pady=10)
+
+    def fetch_and_display_data(self, class_id):
+        """Получение и отображение данных."""
+        try:
+            self.conn = connect_db()
+            cur = self.conn.cursor()
+            # Запрос данных о последних 10 детекциях по class_id
+            cur.execute(
+                "SELECT detection_date, people_count FROM occupancy WHERE class_id = %s ORDER BY detection_date DESC LIMIT 10;",
+                (class_id-1,))
+            rows = cur.fetchall()
+
+            display_text = f"{translations[self.app.current_language]['last_10_detections'].format(class_id=class_id)}:\n\n"
+            for row in rows:
+                display_text += f"{translations[self.app.current_language]['Datae']}: {row[0]}, {translations[self.app.current_language]['Caounte']}: {row[1]}\n"
+            self.data_text.delete(1.0, tk.END)
+            self.data_text.insert(tk.END, display_text)
+            cur.close()
+            self.conn.close()
+        except psycopg2.Error as e:
+            messagebox.showerror(translations[self.app.current_language]['database_error'], translations[self.app.current_language]['fetch_data_error'].format(error=e))
+        finally:
+            if self.conn:
+                self.conn.close()
 
     def display_graph(self, class_id, graph_number):
         """Отображение выбранного графика."""
@@ -158,13 +158,6 @@ class DataPage(tk.Frame):
             if self.conn:
                 self.conn.close()
 
-    def back_to_menu(self):
-        """Возвращение в меню."""
-        self.content.destroy()
-        self.content = tk.Frame(self)
-        self.content.pack(expand=True, fill="both")
-        self.get_content()
-
     def save_report_to_pdf(self, class_id):
         """Сохранение отчета в PDF файл с поддержкой Unicode и таблицей с бордюрами."""
         report_folder = 'reports/PDF format'
@@ -194,7 +187,7 @@ class DataPage(tk.Frame):
         pdf.ln(10)  # Переход на новую строку
 
         # Добавление данных
-        data = self.fetch_data_for_pdf(class_id)
+        data = self.fetch_data_for_ot4et(class_id)
         counter = 1
         for index, row in enumerate(data):
             if index % 1000 == 0:  # Пропуск каждой тысячной записи
@@ -219,6 +212,51 @@ class DataPage(tk.Frame):
 
         pdf.output(pdf_file_path)
         messagebox.showinfo(translations[self.current_language]['report_save'], f"{translations[self.current_language]['report_successfully_saved_to']}: {pdf_file_path}")
+
+    def save_report_to_word(self, class_id):
+        """Сохранение отчета в Word файл с графиками и форматированными датами."""
+        report_folder = 'reports/Word format'
+        if not os.path.exists(report_folder):
+            os.makedirs(report_folder)
+
+        username, position_name = self.get_user_details(self.user_id)
+        current_date = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        doc_file_name = f"{translations[self.current_language]['report']}_{class_id}_{current_date}_{username}.docx"
+        doc_file_path = os.path.join(report_folder, doc_file_name)
+
+        doc = Document()
+        doc.add_heading(translations[self.current_language]['report'], level=1)
+
+        doc.add_paragraph(f"{translations[self.current_language]['username']}: {username}")
+        doc.add_paragraph(f"{translations[self.current_language]['position']}: {position_name}")
+        doc.add_paragraph(f"{translations[self.current_language]['ncam']}: {class_id}")
+
+        records = self.fetch_data_for_ot4et(class_id)
+        table = doc.add_table(rows=1, cols=3)
+        hdr_cells = table.rows[0].cells
+        hdr_cells[0].text = translations[self.current_language]['nomerz']
+        hdr_cells[1].text = translations[self.current_language]['Date_of_discovery']
+        hdr_cells[2].text = translations[self.current_language]['Number_of_people']
+
+        for index, record in enumerate(records):
+            row_cells = table.add_row().cells
+            formatted_date = record[0].strftime("%Y-%m-%d")
+            row_cells[0].text = str(index + 1)
+            row_cells[1].text = formatted_date
+            row_cells[2].text = str(record[1])
+            for cell in row_cells:
+                self.set_cell_border(cell, top={"sz": 12, "val": "single", "space": "0"}, bottom={"sz": 12, "val": "single"})
+
+        for i in range(1, 4):
+            graph_path = self.load_graph_path_from_db(class_id, i)
+            if graph_path:
+                # Ensure each graph starts on a new page
+                doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
+                doc.add_picture(graph_path, width=Pt(400))
+
+        doc.save(doc_file_path)
+        messagebox.showinfo(translations[self.current_language]['report_save'], f"{translations[self.current_language]['report_successfully_saved_to']}: {doc_file_path}")
 
     def get_user_details(self, user_id):
         """Получение имени пользователя и перевода названия его должности по user_id."""
@@ -247,7 +285,7 @@ class DataPage(tk.Frame):
             self.conn.close()
 
         return username, translated_position
-    def fetch_data_for_pdf(self, class_id):
+    def fetch_data_for_ot4et(self, class_id):
         """Запрос данных для отчета, возвращает каждую тысячную запись."""
         self.conn = connect_db()
         cur = self.conn.cursor()
@@ -259,51 +297,6 @@ class DataPage(tk.Frame):
         # Возвращаем каждую тысячную запись
         filtered_rows = [row for index, row in enumerate(rows) if index % 1000 == 0]
         return filtered_rows
-
-    def save_report_to_word(self, class_id):
-        """Сохранение отчета в Word файл с графиками и форматированными датами."""
-        report_folder = 'reports/Word format'
-        if not os.path.exists(report_folder):
-            os.makedirs(report_folder)
-
-        username, position_name = self.get_user_details(self.user_id)
-        current_date = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-        doc_file_name = f"{translations[self.current_language]['report']}_{class_id}_{current_date}_{username}.docx"
-        doc_file_path = os.path.join(report_folder, doc_file_name)
-
-        doc = Document()
-        doc.add_heading(translations[self.current_language]['report'], level=1)
-
-        doc.add_paragraph(f"{translations[self.current_language]['username']}: {username}")
-        doc.add_paragraph(f"{translations[self.current_language]['position']}: {position_name}")
-        doc.add_paragraph(f"{translations[self.current_language]['ncam']}: {class_id}")
-
-        records = self.fetch_data_for_pdf(class_id)
-        table = doc.add_table(rows=1, cols=3)
-        hdr_cells = table.rows[0].cells
-        hdr_cells[0].text = translations[self.current_language]['nomerz']
-        hdr_cells[1].text = translations[self.current_language]['Date_of_discovery']
-        hdr_cells[2].text = translations[self.current_language]['Number_of_people']
-
-        for index, record in enumerate(records):
-            row_cells = table.add_row().cells
-            formatted_date = record[0].strftime("%Y-%m-%d")
-            row_cells[0].text = str(index + 1)
-            row_cells[1].text = formatted_date
-            row_cells[2].text = str(record[1])
-            for cell in row_cells:
-                self.set_cell_border(cell, top={"sz": 12, "val": "single", "space": "0"}, bottom={"sz": 12, "val": "single"})
-
-        for i in range(1, 4):
-            graph_path = self.load_graph_path_from_db(class_id, i)
-            if graph_path:
-                # Ensure each graph starts on a new page
-                doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
-                doc.add_picture(graph_path, width=Pt(400))
-
-        doc.save(doc_file_path)
-        messagebox.showinfo(translations[self.current_language]['report_save'], f"{translations[self.current_language]['report_successfully_saved_to']}: {doc_file_path}")
 
     def set_cell_border(self, cell, **kwargs):
         """
@@ -343,6 +336,7 @@ class DataPage(tk.Frame):
                 for key in ["sz", "val", "color", "space", "shadow"]:
                     if key in edge_data:
                         element.set(qn('w:{}'.format(key)), str(edge_data[key]))
+
     def load_graph_path_from_db(self, class_id, graph_number):
         """Загрузка пути к графику из базы данных для отчета."""
         self.conn = connect_db()
@@ -353,12 +347,14 @@ class DataPage(tk.Frame):
         result = cur.fetchone()
         self.conn.close()
         return result[0] if result else None
+
     def create_button(self, index):
         """Создание кнопки для аудитории и сохранение ссылки на неё."""
         button = tk.Button(self.content, text=translations[self.current_language]['class_data'].format(index),
                            command=lambda i=index: self.show_class_data(i))
         self.buttons[index] = button  # Сохраняем ссылку на кнопку
         return button
+
     def get_user_position_id(self):
         """Получение ID должности пользователя из базы данных."""
         if self.user_id is None:
@@ -413,6 +409,13 @@ class DataPage(tk.Frame):
         finally:
             if self.conn:
                 self.conn.close()
+
+    def back_to_menu(self):
+        """Возвращение в меню."""
+        self.content.destroy()
+        self.content = tk.Frame(self)
+        self.content.pack(expand=True, fill="both")
+        self.get_content()
 
     def get_content(self):
         """Получение контента страницы."""

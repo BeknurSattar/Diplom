@@ -130,8 +130,6 @@ class ProfilePage(tk.Frame):
         self.label_position = tk.Label(self, text="", font=("Arial", 14))
         self.label_position.pack(pady=10)
 
-
-
     def display_user_image(self, image_path):
         """Отображает круглое изображение пользователя."""
         try:
@@ -178,8 +176,6 @@ class ProfilePage(tk.Frame):
         self.new_email = simpledialog.askstring(translations[self.current_language]['Change_email'],
                                                 translations[self.current_language]['Enter_new_email'],
                                                 initialvalue=initial_email, parent=self)
-
-
         self.choose_image()
         if self.new_username and self.new_email:
             self.save_profile_changes()

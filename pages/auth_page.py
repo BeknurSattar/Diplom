@@ -21,8 +21,20 @@ class AuthPage(tk.Toplevel):
         self.change_language('Русский')  # Установка начального языка интерфейса
         self.selected_language = 'ru'
 
-    def show(self):
-        self.deiconify()  # Делает окно видимым, если оно было скрыто
+    # Смена языка
+    def change_language(self, language_key):
+        language_code = self.language_options[language_key]  # Получаем код языка по его полному названию
+        self.current_language = language_code
+        self.selected_language = language_code
+        # Обновление текста виджетов на выбранный язык
+        self.title(translations[self.current_language]['login_window_title'])
+        self.label_email.config(text=translations[self.current_language]['Email'])
+        self.label_password.config(text=translations[self.current_language]['Password'])
+        self.show_password_checkbox.config(text=translations[self.current_language]['Show_password'])
+        self.button_login.config(text=translations[self.current_language]['Login'])
+        self.button_register.config(text=translations[self.current_language]['Register'])
+
+    # Создание элементов
     def create_widgets(self):
         # Стили для виджетов
         label_style = {"font": ("Arial", 12), "bg": "#f0f0f0"}
@@ -59,17 +71,7 @@ class AuthPage(tk.Toplevel):
                                            command=self.change_language)
         self.language_menu.pack(pady=(5, 5))
 
-    def change_language(self, language_key):
-        language_code = self.language_options[language_key]  # Получаем код языка по его полному названию
-        self.current_language = language_code
-        self.selected_language = language_code
-        # Обновление текста виджетов на выбранный язык
-        self.title(translations[self.current_language]['login_window_title'])
-        self.label_email.config(text=translations[self.current_language]['Email'])
-        self.label_password.config(text=translations[self.current_language]['Password'])
-        self.show_password_checkbox.config(text=translations[self.current_language]['Show_password'])
-        self.button_login.config(text=translations[self.current_language]['Login'])
-        self.button_register.config(text=translations[self.current_language]['Register'])
+    # Вход в приложения
     def login(self):
         # Метод для обработки входа пользователя
         email = self.entry_email.get()
@@ -104,12 +106,15 @@ class AuthPage(tk.Toplevel):
                 messagebox.showerror(translations[self.current_language]['error'], translations[self.current_language]['please_again'])
         else:
             messagebox.showerror(translations[self.current_language]['database_error'], translations[self.current_language]['connection_error'])
+
+    # Открытие окна регистрации
     def open_register_window(self):
         # Метод для открытия окна регистрации
         from .register import RegisterPage
         register_window = RegisterPage(self.parent, self.selected_language)
         register_window.grab_set()
 
+    # Скрыт показать пароль
     def toggle_password_visibility(self):
         # Переключение видимости пароля
         if self.show_password_var.get():

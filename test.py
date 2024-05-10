@@ -16,11 +16,16 @@ from Helps.utils import *
 class Page(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("AnaLiz")  # Установка названия окна
+
+        self.title("AnaLiz")
         self.geometry("800x600")  # Установка размеров окна
+
+        # Управление окном
         self.full_screen = False
         self.bind("<F11>", self.toggle_fullscreen)
         self.bind("<Escape>", self.end_fullscreen)
+
+        # Начальный цвета приложения
         self.current_theme_bg = "#f0f0f0"
         self.current_theme_fg = "black"
         self.configure(bg="#f0f0f0")
@@ -32,9 +37,10 @@ class Page(tk.Tk):
 
         self.translations = translations
         self.current_language = 'ru'  # Устанавливаем русский язык по умолчанию
+
+        # Состояние аутентификации пользователя
         self.is_authenticated = False
         self.user_id = None  # Инициализация user_id с None
-        # Состояние аутентификации пользователя
 
         self.selected_index = 0  # Индекс выбранной вкладки в навигации
 
@@ -47,11 +53,20 @@ class Page(tk.Tk):
         # Обработка закрытия окна
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
-    def on_close(self):
-        """Обработчик закрытия окна."""
-        self.save_session()  # Сохранение сеанса перед закрытием
-        self.destroy()  # Закрытие приложения
+    # Смена языка
+    def set_language(self, language):
+        self.current_language = language
+        # Обновляем тексты на всех кнопках
+        self.home_button.config(text=self.translations[language]['home'])
+        self.profile_button.config(text=self.translations[language]['profile'])
+        self.exit_button.config(text=self.translations[language]['exit'])
+        for i, button in enumerate(self.navigation_buttons):
+            button.config(text=self.translations[language][self.pages[i].translation_key])
 
+        # Обновляем страницы
+        self.update_body_content()
+
+    # Сохранение данных о сеансе в базу
     def save_session(self):
         """Сохраняет текущее состояние сессии в базу данных PostgreSQL."""
         conn = None
@@ -71,43 +86,7 @@ class Page(tk.Tk):
             if conn is not None:
                 conn.close()
 
-    # Дополнительные функции для управления полноэкранным режимом (при желании):
-    def toggle_fullscreen(self, event=None):
-        self.full_screen = not self.full_screen
-        self.attributes('-fullscreen', self.full_screen)
-        return "break"
-
-    def end_fullscreen(self, event=None):
-        self.full_screen = False
-        self.attributes('-fullscreen', False)
-        return "break"
-    def set_language(self, language):
-        self.current_language = language
-        # Обновляем тексты на всех кнопках
-        self.home_button.config(text=self.translations[language]['home'])
-        self.profile_button.config(text=self.translations[language]['profile'])
-        self.exit_button.config(text=self.translations[language]['exit'])
-        for i, button in enumerate(self.navigation_buttons):
-            button.config(text=self.translations[language][self.pages[i].translation_key])
-
-        # Обновляем страницы
-        self.update_body_content()
-
-    def apply_theme_to_all(self, bg, fg):
-        self.current_theme_bg = bg  # сохраняем текущие цвета темы
-        self.current_theme_fg = fg
-        self.apply_theme_to_all_for_child(self, bg, fg)  # применяем тему ко всему приложению
-
-    def apply_theme_to_all_for_child(self, widget, bg, fg):
-        try:
-            widget.configure(bg=bg)
-            if hasattr(widget, 'configure') and 'fg' in widget.keys():
-                widget.configure(fg=fg)
-        except tk.TclError:
-            pass
-        for child in widget.winfo_children():
-            self.apply_theme_to_all_for_child(child, bg, fg)
-
+    # Загрузка данных о сеансе из базы
     def load_session_from_db(self):
         """Загружает последнюю активную сессию пользователя из базы данных."""
         conn = None
@@ -129,51 +108,25 @@ class Page(tk.Tk):
             if conn:
                 conn.close()
 
-    def logout(self):
-        """Очищает сессию и перезапускает приложение для новой аутентификации."""
-        self.is_authenticated = False
-        self.save_session()  # Обновляем сессию в базе данных перед выходом
-        self.restart()
-
-    def restart(self):
-        """Перезапускает интерфейс пользователя, начиная с окна авторизации."""
-        self.destroy()  # Закрываем текущее окно
-        self.__init__()  # Пересоздаём окно приложения
-    def show_login_window(self):
-        login_window = AuthPage(self)
-        login_window.attributes('-topmost', True)
-        self.wait_window(login_window)
-        if login_window.is_authenticated:
-            self.user_id = login_window.user_id
-            self.is_authenticated = True
-            self.current_language = login_window.selected_language
-            self.set_language(self.current_language)
-            self.create_widgets()
-            self.lift()
-            self.attributes('-topmost', False)
-        else:
-            self.destroy()
-
+    # Проверка на авторизацию
     def check_authentication(self):
-
-            # Попытка загрузить данные сессии из базы данных
-                try:
-                    login_window = AuthPage(self)  # Создание окна аутентификации
-                    login_window.attributes('-topmost', True)  # Установка окна аутентификации поверх других окон
-                    self.wait_window(login_window)  # Ожидание закрытия окна аутентификации
-                    if login_window.is_authenticated:
-                        self.user_id = login_window.user_id
-                        self.is_authenticated = True
-                        self.create_widgets()
-                        self.set_language(login_window.selected_language)  # Установка языка из AuthPage
-                        self.lift()  # Поднимаем окно приложения на передний план
-                        self.attributes('-topmost', False)
-                    else:
-                        self.destroy()  # Закрытие приложения, если аутентификация не пройдена
-                except Exception as e:
-                    messagebox.showerror(translations[self.current_language]['error'],
-                                         translations[self.current_language]['authentication_error'].format(error=e))
-                    self.destroy()
+            try:
+                login_window = AuthPage(self)  # Создание окна аутентификации
+                login_window.attributes('-topmost', True)  # Установка окна аутентификации поверх других окон
+                self.wait_window(login_window)  # Ожидание закрытия окна аутентификации
+                if login_window.is_authenticated:
+                    self.user_id = login_window.user_id
+                    self.is_authenticated = True
+                    self.create_widgets()
+                    self.set_language(login_window.selected_language)  # Установка языка из AuthPage
+                    self.lift()  # Поднимаем окно приложения на передний план
+                    self.attributes('-topmost', False)
+                else:
+                    self.destroy()  # Закрытие приложения, если аутентификация не пройдена
+            except Exception as e:
+                messagebox.showerror(translations[self.current_language]['error'],
+                                     translations[self.current_language]['authentication_error'].format(error=e))
+                self.destroy()
 
 
     def create_widgets(self):
@@ -225,23 +178,6 @@ class Page(tk.Tk):
 
         self.update_body_content()
 
-    def show_home(self):
-        # Переход на главную страницу
-        self.selected_index = 0
-        self.update_body_content()
-
-    def show_profile(self):
-        # Переход на страницу профиля
-        self.selected_index = -1  # Специальный индекс для страницы профиля
-        self.update_body_content()
-
-    def confirm_exit(self):
-        # Запрашиваем подтверждение выхода
-        if messagebox.askokcancel(translations[self.current_language]['exit'], translations[self.current_language]['confirm_exit']):
-            # Если пользователь подтвердил выход, перекидываем на окно авторизации
-            self.save_session()  # Save session before exiting
-            self.destroy()
-
     def update_body_content(self):
         # Очистка и обновление содержимого главного фрейма
         for widget in self.body_frame.winfo_children():
@@ -268,10 +204,69 @@ class Page(tk.Tk):
             except Exception as e:
                 messagebox.showerror(translations[self.current_language]['error'], translations[self.current_language]['page_creation_error'].format(error=e))
 
+    def apply_theme_to_all(self, bg, fg):
+        self.current_theme_bg = bg  # сохраняем текущие цвета темы
+        self.current_theme_fg = fg
+        self.apply_theme_to_all_for_child(self, bg, fg)  # применяем тему ко всему приложению
+
+    def apply_theme_to_all_for_child(self, widget, bg, fg):
+        try:
+            widget.configure(bg=bg)
+            if hasattr(widget, 'configure') and 'fg' in widget.keys():
+                widget.configure(fg=fg)
+        except tk.TclError:
+            pass
+        for child in widget.winfo_children():
+            self.apply_theme_to_all_for_child(child, bg, fg)
+
+    # Дополнительные функции для управления полноэкранным режимом (при желании):
+    def toggle_fullscreen(self, event=None):
+        self.full_screen = not self.full_screen
+        self.attributes('-fullscreen', self.full_screen)
+        return "break"
+
+    def end_fullscreen(self, event=None):
+        self.full_screen = False
+        self.attributes('-fullscreen', False)
+        return "break"
+
+    def logout(self):
+        """Очищает сессию и перезапускает приложение для новой аутентификации."""
+        self.is_authenticated = False
+        self.save_session()  # Обновляем сессию в базе данных перед выходом
+        self.restart()
+
+    def restart(self):
+        """Перезапускает интерфейс пользователя, начиная с окна авторизации."""
+        self.destroy()  # Закрываем текущее окно
+        self.__init__()  # Пересоздаём окно приложения
+
+    def show_home(self):
+        # Переход на главную страницу
+        self.selected_index = 0
+        self.update_body_content()
+
+    def show_profile(self):
+        # Переход на страницу профиля
+        self.selected_index = -1  # Специальный индекс для страницы профиля
+        self.update_body_content()
+
+    def confirm_exit(self):
+        # Запрашиваем подтверждение выхода
+        if messagebox.askokcancel(translations[self.current_language]['exit'], translations[self.current_language]['confirm_exit']):
+            # Если пользователь подтвердил выход, перекидываем на окно авторизации
+            self.save_session()  # Save session before exiting
+            self.destroy()
+
     def on_navigation_selected(self, index):
         # Обработка выбора элемента навигации
         self.selected_index = index
         self.update_body_content()
+
+    def on_close(self):
+        """Обработчик закрытия окна."""
+        self.save_session()  # Сохранение сеанса перед закрытием
+        self.destroy()  # Закрытие приложения
 
 if __name__ == "__main__":
     app = Page()

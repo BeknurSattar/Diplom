@@ -34,8 +34,6 @@ class HomePage(tk.Frame):
         # Обновление текста на информационных карточках
         self.people_card.config(text=f"{translations[language]['total_detected_people']}: {self.fetch_total_people()}")
 
-
-
     def display_content(self):
         # Размещение фреймов для информационных карточек, графиков и данных
         info_frame = tk.Frame(self)

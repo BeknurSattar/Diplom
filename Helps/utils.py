@@ -58,6 +58,7 @@ def stop_periodic_data_insert():
     if data_insert_timer is not None:
         data_insert_timer.cancel()
         data_insert_timer = None
+
 def hash_password(password):
     # Генерируем соль для хеширования
     salt = bcrypt.gensalt()
@@ -69,15 +70,6 @@ def check_password(hashed_password, user_password):
     # Проверяем, совпадает ли введенный пароль с хешированным
     return bcrypt.checkpw(user_password.encode(), hashed_password)
 
-def first_frame(self, camera_id):
-    first_frame = None
-    video = cv2.VideoCapture(camera_id)
-    while True:
-        frame = video.read()
-        img = cv2.resize(frame, (800, 600))
-        if first_frame is None:
-            first_frame = img.copy()
-    return first_frame
 
 
 

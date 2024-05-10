@@ -21,6 +21,7 @@ class SettingsPage(tk.Frame):
         for page in self.pages:
             if hasattr(page, 'update_language'):
                 page.update_language(new_language)
+
     def set_language(self, language):
         self.current_language = language
         # Обновляем текст на всех кнопках и метках
@@ -60,12 +61,16 @@ class SettingsPage(tk.Frame):
         self.set_language(language)
         self.app.set_language(language)  # Обновляем язык в главном приложении
 
+    def change_language_wrapper(self, event=None):
+        selected_language = self.language_dropdown.get()
+        if selected_language:
+            self.change_language(selected_language.lower())
+
     def safe_exit(self):
         """Запрашивает подтверждение выхода и выходит из аккаунта, перезапускает окно авторизации."""
         if messagebox.askokcancel(translations[self.current_language]['exit_confirmation_title'],
                                   translations[self.current_language]['confirm_exit']):
             self.app.logout()  # Выход из аккаунта
-
 
     def generate_buttons(self):
         self.theme_button = tk.Button(self.content, command=self.change_theme, bg="#1976D2", fg="white")
@@ -88,8 +93,3 @@ class SettingsPage(tk.Frame):
 
         # Применение начального языка
         self.set_language(self.current_language)
-
-    def change_language_wrapper(self, event=None):
-        selected_language = self.language_dropdown.get()
-        if selected_language:
-            self.change_language(selected_language.lower())

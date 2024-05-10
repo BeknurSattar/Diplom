@@ -10,7 +10,6 @@ from Helps.utils import *
 import cv2
 from detection.persondetection import DetectorAPI
 
-
 class CameraPage(tk.Frame):
     """Страница управления видеокамерами и обработкой видео потоков."""
     def __init__(self, parent, app, user_id=None):
@@ -24,7 +23,6 @@ class CameraPage(tk.Frame):
         self.layout = 1
         # Загрузка списка доступных видео файлов с учетом должности пользователя
         self.videos = self.get_video_files_for_user()
-        self.videos1 = self.get_video_files()
         self.odapi = DetectorAPI()  # Подключение API для обнаружения объектов в видео
         self.get_video_files()
         self.get_content()
@@ -58,41 +56,6 @@ class CameraPage(tk.Frame):
         if hasattr(self, 'camera_buttons'):
             for i, btn in self.camera_buttons.items():
                 btn.config(text=translations[language]['camera_btn'].format(number=i))
-
-    def back_to_menu(self):
-        """Возвращение в меню."""
-        self.content.destroy()  # Уничтожаем текущее содержимое
-        self.content = tk.Frame(self)
-        self.content.pack(expand=True, fill="both")
-        self.create_buttons_layout()  # Отображаем кнопки снова
-
-    def open_dlg_modal(self, box_index):
-        """Открытие модального окна для выбора видео источника."""
-        def close_dlg():
-            dlg_modal.destroy()
-
-        dlg_modal = tk.Toplevel(self.content)
-        dlg_modal.title(translations[self.current_language]['available_cameras'])
-        dlg_modal.geometry("400x200")
-        dlg_modal.transient(self.content)
-        dlg_modal.grab_set()
-        print(self.videos)
-        print(self.videos1)
-
-
-        actions_frame = tk.Frame(dlg_modal)
-        actions_frame.pack(padx=10, pady=10)
-
-        for i, (key, medio) in enumerate(self.videos.items(), start=1):
-            btn_text = translations[self.current_language]['camera_btn'].format(number=i)
-            btn = tk.Button(actions_frame, text=btn_text,
-                            command=lambda index=key: self.show_video_in_box(index, box_index, dlg_modal))
-            btn.grid(row=i-1, column=0, padx=5, pady=5)
-
-        self.cancel_btn = tk.Button(actions_frame, text=translations[self.current_language]['cancel'], command=close_dlg)
-        self.cancel_btn.grid(row=len(self.videos), column=0, padx=5, pady=5)
-
-        dlg_modal.protocol("WM_DELETE_WINDOW", close_dlg)
 
     def get_video_files(self):
         """Сканирует директорию на наличие видео файлов и добавляет их в базу данных."""
@@ -237,12 +200,8 @@ class CameraPage(tk.Frame):
 
     def update_image(self, cap, video_label, video_width, video_height, index, save_button):
         """Обновление изображения в интерфейсе и обработка видео потока."""
-        global max_count3, framex3, county3, max3, avg_acc3_list, max_avg_acc3_list, max_acc3, max_avg_acc3
-
+        global max_count3, county3,  avg_acc3_list,  max_acc3, max_avg_acc3
         # Сброс переменных состояния
-        framex3 = []
-        max3 = []
-        max_avg_acc3_list = []
         max_acc3 = 0
         max_avg_acc3 = 0
 
@@ -251,15 +210,13 @@ class CameraPage(tk.Frame):
         avg_acc3_list = []
         threshold = 0.7  # Порог обнаружения
 
-        x3 = 0
-
         people_data = []  # Список для хранения данных о количестве людей по времени
         accuracy_data = []  # Список для хранения данных о точности определения по времени
         processing_speed_data = []  # Список для хранения данных о скорости обработки кадров
 
         def analyze_and_update():
             """Функция анализа видео кадра и обновления интерфейса."""
-            global max_count3, framex3, county3, max3, avg_acc3_list, max_avg_acc3_list, max_acc3, max_avg_acc3, x3
+            global max_count3, county3,  avg_acc3_list,  max_acc3, max_avg_acc3
             start_time = time.time()  # Засекаем время начала обработки кадра
 
             ret, frame = cap.read()
@@ -396,6 +353,33 @@ class CameraPage(tk.Frame):
             widget.destroy()
         self.create_initial_box_view(box)
 
+    def open_dlg_modal(self, box_index):
+        """Открытие модального окна для выбора видео источника."""
+        def close_dlg():
+            dlg_modal.destroy()
+
+        dlg_modal = tk.Toplevel(self.content)
+        dlg_modal.title(translations[self.current_language]['available_cameras'])
+        dlg_modal.geometry("400x200")
+        dlg_modal.transient(self.content)
+        dlg_modal.grab_set()
+        print(self.videos)
+
+
+        actions_frame = tk.Frame(dlg_modal)
+        actions_frame.pack(padx=10, pady=10)
+
+        for i, (key, medio) in enumerate(self.videos.items(), start=1):
+            btn_text = translations[self.current_language]['camera_btn'].format(number=i)
+            btn = tk.Button(actions_frame, text=btn_text,
+                            command=lambda index=key: self.show_video_in_box(index, box_index, dlg_modal))
+            btn.grid(row=i-1, column=0, padx=5, pady=5)
+
+        self.cancel_btn = tk.Button(actions_frame, text=translations[self.current_language]['cancel'], command=close_dlg)
+        self.cancel_btn.grid(row=len(self.videos), column=0, padx=5, pady=5)
+
+        dlg_modal.protocol("WM_DELETE_WINDOW", close_dlg)
+
     def create_initial_box_view(self, box):
         """Создание начального вида контейнера для видео."""
         btn = tk.Button(box, text=translations[self.current_language]['select_camera'], width=15, height=2, font=("Arial", 12), command=lambda b=box: self.open_dlg_modal(b))
@@ -430,6 +414,13 @@ class CameraPage(tk.Frame):
                                 command=lambda b=box: self.open_dlg_modal(b))
                 self.select_camera_button.pack(expand=True, fill='both')  # Располагаем кнопку в центре рамки
 
+    def back_to_menu(self):
+        """Возвращение в меню."""
+        self.content.destroy()  # Уничтожаем текущее содержимое
+        self.content = tk.Frame(self)
+        self.content.pack(expand=True, fill="both")
+        self.create_buttons_layout()  # Отображаем кнопки снова
+
     def appbar(self):
         """Создание панели приложения с навигационными кнопками."""
         app_bar = tk.Frame(self, height=56, bg="#1976D2")
@@ -462,5 +453,3 @@ class CameraPage(tk.Frame):
         self.content.pack(side="top", fill="both", expand=True)
 
         return app_bar, self.content
-
-
