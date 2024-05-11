@@ -8,7 +8,7 @@ app = Flask(__name__)
 # Загрузка предварительно обученной модели (например, YOLO)
 net = cv2.dnn.readNet("detection/yolov3.weights", "detection/yolov3.cfg")
 classes = []
-with open("detection/coco.names", "r") as f:
+with open("../detection/coco.names", "r") as f:
     classes = [line.strip() for line in f.readlines()]
 
 layer_names = net.getLayerNames()

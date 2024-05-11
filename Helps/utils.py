@@ -21,16 +21,23 @@ def connect_db():
 
 data_insert_timer = None
 # Функция для вставки данных в базу данных
-def insert_data(people_count, class_id):
-    """Вставляет данные о количестве людей, дате обнаружения и идентификаторе класса в базу данных."""
+from datetime import datetime
+
+def insert_data(people_count, class_id, user_id):
+    """Вставляет данные о количестве людей, дате обнаружения, идентификаторе класса и идентификаторе пользователя в базу данных."""
     conn = None
     try:
-        conn = connect_db()
+        conn = connect_db()  # Предполагается, что функция connect_db() возвращает объект соединения
+        if conn is None:
+            raise Exception("Не удалось подключиться к базе данных.")
+
         cur = conn.cursor()
-        cur.execute("INSERT INTO occupancy (detection_date, people_count, class_id) VALUES (%s, %s, %s)",
-                    (datetime.now(), people_count, class_id))
+        # Добавляем user_id в запрос
+        cur.execute("INSERT INTO occupancy (detection_date, people_count, class_id, user_id) VALUES (%s, %s, %s, %s)",
+                    (datetime.now(), people_count, class_id, user_id))
         conn.commit()
         cur.close()
+        print("Данные успешно вставлены.")
     except Exception as error:
         print("Ошибка вставки данных: ", error)
     finally:
