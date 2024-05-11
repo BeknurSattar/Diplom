@@ -241,7 +241,7 @@ class DataPage(tk.Frame):
 
         for index, record in enumerate(records):
             row_cells = table.add_row().cells
-            formatted_date = record[0].strftime("%Y-%m-%d")
+            formatted_date = record[0].strftime("%Y-%m-%d %H:%M:%S")
             row_cells[0].text = str(index + 1)
             row_cells[1].text = formatted_date
             row_cells[2].text = str(record[1])
@@ -289,15 +289,18 @@ class DataPage(tk.Frame):
         """Запрос данных для отчета, возвращает каждую тысячную запись."""
         self.conn = connect_db()
         cur = self.conn.cursor()
-        cur.execute("SELECT detection_date, people_count FROM occupancy WHERE class_id = %s ORDER BY detection_date;",
+        try:
+            cur.execute("SELECT detection_date, people_count FROM occupancy WHERE class_id = %s ORDER BY detection_date;",
                     (class_id,))
-        rows = cur.fetchall()
-        self.conn.close()
+            rows = cur.fetchall()
+            self.conn.close()
 
         # Возвращаем каждую тысячную запись
-        filtered_rows = [row for index, row in enumerate(rows) if index % 1000 == 0]
-        return filtered_rows
-
+            filtered_rows = [row for index, row in enumerate(rows) if index % 1000 == 0]
+            return filtered_rows
+        finally:
+            cur.close()
+            self.conn.close()
     def set_cell_border(self, cell, **kwargs):
         """
         Set cell's border

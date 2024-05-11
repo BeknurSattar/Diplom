@@ -174,12 +174,47 @@ class CameraPage(tk.Frame):
                 self.remove_button.pack(side="left", padx=5)
 
                 # Добавим кнопку для сохранения графиков, которая будет активирована позже
-                self.save_button = tk.Button(box, text=translations[self.current_language]['save_graphs'], command=lambda: self.create_and_save_graphs(
-                    self.people_data, self.accuracy_data, self.processing_speed_data, index), state=tk.DISABLED)
+                self.save_button = tk.Button(box, text=translations[self.current_language]['save_graphs'], command=lambda:
+                                                    self.create_and_save_graphs(self.people_data, self.accuracy_data, self.processing_speed_data, index, self.user_id),
+                                                    state=tk.DISABLED)
                 self.save_button.pack(side="left", padx=5)
+
+                # Кнопка для переключения в полноэкранный режим
+                self.fullscreen_button = tk.Button(box, text=translations[self.current_language]['fullscreen'],
+                                                   command=lambda: self.toggle_fullscreen(cap, video_width, video_height))
+                self.fullscreen_button.pack(side="left", padx=5)
 
                 # Начать обновление изображения
                 self.update_image(cap, video_label, video_width, video_height, index, self.save_button)
+
+    def toggle_fullscreen(self, cap, video_width, video_height):
+        """Переключение между полноэкранным режимом и обычным размером."""
+        top_level = tk.Toplevel()
+        top_level.attributes('-fullscreen', True)  # Устанавливаем атрибуты для полноэкранного режима
+        video_width, video_height = video_width * 4, video_height * 4
+        # Создаем видео лейбл для полноэкранного режима
+        full_video_label = tk.Label(top_level)
+        full_video_label.pack(fill="both", expand=True)
+
+        # Добавляем возможность выхода из полноэкранного режима по нажатию на клавишу 'Esc'
+        top_level.bind("<Escape>", lambda e: top_level.destroy())
+
+        def update_fullscreen_video():
+            """Обновление видео в полноэкранном режиме."""
+            ret, frame = cap.read()
+            if ret:
+                frame_height, frame_width, _ = frame.shape
+                # aspect_ratio = frame_width / frame_height
+
+                imgtk = self.create_video_image(frame, video_width, video_height)
+                full_video_label.configure(image=imgtk)
+                full_video_label.imgtk = imgtk
+                full_video_label.after(33, update_fullscreen_video)
+            else:
+                cap.release()
+                top_level.destroy()
+
+        update_fullscreen_video()
 
     def calculate_video_dimensions(self, aspect_ratio, box_width, box_height):
         """Расчет оптимальных размеров видео для отображения."""
@@ -214,9 +249,13 @@ class CameraPage(tk.Frame):
         accuracy_data = []  # Список для хранения данных о точности определения по времени
         processing_speed_data = []  # Список для хранения данных о скорости обработки кадров
 
+        # Время последнего сохранения
+        last_save_time = time.time()
         def analyze_and_update():
             """Функция анализа видео кадра и обновления интерфейса."""
             global max_count3, county3,  avg_acc3_list,  max_acc3, max_avg_acc3
+
+            nonlocal last_save_time
             start_time = time.time()  # Засекаем время начала обработки кадра
 
             ret, frame = cap.read()
@@ -246,15 +285,12 @@ class CameraPage(tk.Frame):
 
                 county3.append(person)
 
-
                 if (person >= 1):
                     avg_acc3_list.append(acc / person)
                     if ((acc / person) > max_avg_acc3):
                         max_avg_acc3 = (acc / person)
                 else:
                     avg_acc3_list.append(acc)
-
-                start_periodic_data_insert(person, index)
 
                 # Сохранение данных
                 people_data.append(person)
@@ -266,6 +302,10 @@ class CameraPage(tk.Frame):
                 fps = 1 / processing_time if processing_time > 0 else 0
                 processing_speed_data.append(fps)
 
+                # Проверяем, нужно ли сохранять данные
+                if (time.time() - last_save_time) >= 5:
+                    insert_data(person, index, self.user_id)
+                    last_save_time = time.time()
                 # Повторение обработки через заданный интервал
                 video_label.after(33, analyze_and_update)
             else:
@@ -283,7 +323,7 @@ class CameraPage(tk.Frame):
         # Запускаем анализ и обновление изображения в отдельном потоке
         threading.Thread(target=analyze_and_update).start()
 
-    def create_and_save_graphs(self, people_data, accuracy_data, processing_speed_data, class_id):
+    def create_and_save_graphs(self, people_data, accuracy_data, processing_speed_data, class_id, user_id):
         """Создание и сохранение графиков по данным."""
         base_directory = 'saved_graphs'
         if not os.path.exists(base_directory):
@@ -329,8 +369,8 @@ class CameraPage(tk.Frame):
 
                     # Сохраняем информацию о графике в базу данных
                     cursor.execute(
-                        "INSERT INTO graphs (class_id, graph_type_id, graph_path, upload_date) VALUES (%s, %s, %s, %s);",
-                        (class_id, graph_type_id, graph_filename, datetime.now()))
+                        "INSERT INTO graphs (user_id, class_id, graph_type_id, graph_path, upload_date) VALUES (%s, %s, %s, %s, %s);",
+                        (user_id, class_id, graph_type_id, graph_filename, datetime.now()))
 
                 conn.commit()
                 print(translations[self.app.current_language]['graphs_created_and_saved'])
@@ -373,7 +413,7 @@ class CameraPage(tk.Frame):
             btn_text = translations[self.current_language]['camera_btn'].format(number=i)
             btn = tk.Button(actions_frame, text=btn_text,
                             command=lambda index=key: self.show_video_in_box(index, box_index, dlg_modal))
-            btn.grid(row=i-1, column=0, padx=5, pady=5)
+            btn.grid(row=i-1, column=0, padx=7, pady=5)
 
         self.cancel_btn = tk.Button(actions_frame, text=translations[self.current_language]['cancel'], command=close_dlg)
         self.cancel_btn.grid(row=len(self.videos), column=0, padx=5, pady=5)
@@ -382,7 +422,7 @@ class CameraPage(tk.Frame):
 
     def create_initial_box_view(self, box):
         """Создание начального вида контейнера для видео."""
-        btn = tk.Button(box, text=translations[self.current_language]['select_camera'], width=15, height=2, font=("Arial", 12), command=lambda b=box: self.open_dlg_modal(b))
+        btn = tk.Button(box, text=translations[self.current_language]['select_camera'], width=20, height=2, font=("Arial", 12), command=lambda b=box: self.open_dlg_modal(b))
         btn.pack(expand=True, fill='both')
 
     def set_layout(self, layout):
@@ -410,7 +450,7 @@ class CameraPage(tk.Frame):
                 box.grid_propagate(False)  # Отключаем автоматическое изменение размера рамки
 
                 # Создаем кнопку внутри рамки
-                self.select_camera_button = tk.Button(box, text=translations[self.current_language]['select_camera'], width=15, height=2, font=("Arial", 12),
+                self.select_camera_button = tk.Button(box, text=translations[self.current_language]['select_camera'], width=20, height=2, font=("Arial", 12),
                                 command=lambda b=box: self.open_dlg_modal(b))
                 self.select_camera_button.pack(expand=True, fill='both')  # Располагаем кнопку в центре рамки
 
