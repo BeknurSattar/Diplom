@@ -1,6 +1,7 @@
+import os
 import tkinter as tk
 from tkinter import ttk, messagebox
-
+import webbrowser  # Добавляем импорт модуля webbrowser
 from .auth_page import AuthPage
 from Helps.translations import translations
 class SettingsPage(tk.Frame):
@@ -26,7 +27,6 @@ class SettingsPage(tk.Frame):
         self.current_language = language
         # Обновляем текст на всех кнопках и метках
         self.theme_button.config(text=translations[language]['change_theme'])
-        self.notifications_button.config(text=translations[language]['toggle_notifications'])
         self.language_label.config(text=translations[language]['select_language'])
         self.exit_button.config(text=translations[language]['exit'])
         # Обновляем текст на других страницах (если это необходимо)
@@ -51,11 +51,14 @@ class SettingsPage(tk.Frame):
         for child in widget.winfo_children():
             self.apply_theme_to_all(child, bg, fg)  # Рекурсивно применить тему ко всем дочерним элементам
 
-    def toggle_notifications(self):
-        self.notifications_enabled = not getattr(self, 'notifications_enabled', False)
-        msg = translations[self.current_language]['notifications_on'] if self.notifications_enabled else \
-        translations[self.current_language]['notifications_off']
-        messagebox.showinfo(translations[self.current_language]['notifications'], msg)
+    def open_help_document(self):
+        # Путь к файлу теперь формируется через os.path.join для корректной работы на разных ОС
+        help_path = os.path.join('Helps', 'Diplom.pdf')
+        if os.path.exists(help_path):
+            webbrowser.open(help_path)
+        else:
+            messagebox.showerror("Ошибка", "Файл не найден. Проверьте путь: " + help_path)
+            print("Файл не найден. Проверьте путь:", help_path)
 
     def change_language(self, language):
         self.set_language(language)
@@ -76,8 +79,10 @@ class SettingsPage(tk.Frame):
         self.theme_button = tk.Button(self.content, command=self.change_theme, bg="#1976D2", fg="white")
         self.theme_button.pack(fill="x", pady=(0, 10), ipady=5)
 
-        self.notifications_button = tk.Button(self.content, command=self.toggle_notifications, bg="#1976D2", fg="white")
-        self.notifications_button.pack(fill="x", pady=(0, 10), ipady=5)
+        # Кнопка Help
+        self.help_button = tk.Button(self.content, text=translations[self.current_language]['help'],
+                                     command=self.open_help_document, bg="#1976D2", fg="white")
+        self.help_button.pack(fill="x", pady=(0, 10), ipady=5)
 
         self.language_label = tk.Label(self.content, bg="#f0f0f0")
         self.language_label.pack()

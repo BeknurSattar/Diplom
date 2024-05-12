@@ -133,7 +133,8 @@ translations = {
         "report_successfully_saved_to": "The report was successfully saved to",
         "Unknown": "Unknown",
         "nomerz": "Entry no.",
-        "fullscreen": "Fullscreen"
+        "fullscreen": "Fullscreen",
+        "help": "help",
     },
     "ru": {
         "change_theme": "Сменить тему",
@@ -268,7 +269,8 @@ translations = {
         "report_successfully_saved_to": "Отчет успешно сохранен в",
         "Unknown": "Неизвестно",
         "nomerz": "№ записи",
-        "fullscreen": "Увеличить"
+        "fullscreen": "Увеличить",
+        "help": "инструкция",
     },
     "kz": {
         "change_theme": "Тақырыпты өзгерту",
@@ -403,7 +405,8 @@ translations = {
         "report_successfully_saved_to": "Есеп келесіге сәтті сақталды",
         "Unknown": "Белгісіз",
         "nomerz": "Кіру №.",
-        "fullscreen": "Үлкейту"
+        "fullscreen": "Үлкейту",
+        "help": "нұсқаулар",
     }
 
 }

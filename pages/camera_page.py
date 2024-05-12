@@ -1,3 +1,4 @@
+import queue
 import time
 import tkinter as tk
 from tkinter import messagebox
@@ -9,6 +10,8 @@ import datetime
 from Helps.utils import *
 import cv2
 from detection.persondetection import DetectorAPI
+import asyncio
+import concurrent.futures
 
 class CameraPage(tk.Frame):
     """Страница управления видеокамерами и обработкой видео потоков."""
@@ -24,6 +27,8 @@ class CameraPage(tk.Frame):
         # Загрузка списка доступных видео файлов с учетом должности пользователя
         self.videos = self.get_video_files_for_user()
         self.odapi = DetectorAPI()  # Подключение API для обнаружения объектов в видео
+        self.queue = queue.Queue()
+        self.threads = []
         self.get_video_files()
         self.get_content()
 
@@ -187,45 +192,6 @@ class CameraPage(tk.Frame):
                 # Начать обновление изображения
                 self.update_image(cap, video_label, video_width, video_height, index, self.save_button)
 
-    def toggle_fullscreen(self, cap, video_width, video_height):
-        """Переключение между полноэкранным режимом и обычным размером."""
-        top_level = tk.Toplevel()
-        top_level.attributes('-fullscreen', True)  # Устанавливаем атрибуты для полноэкранного режима
-        video_width, video_height = video_width * 4, video_height * 4
-        # Создаем видео лейбл для полноэкранного режима
-        full_video_label = tk.Label(top_level)
-        full_video_label.pack(fill="both", expand=True)
-
-        # Добавляем возможность выхода из полноэкранного режима по нажатию на клавишу 'Esc'
-        top_level.bind("<Escape>", lambda e: top_level.destroy())
-
-        def update_fullscreen_video():
-            """Обновление видео в полноэкранном режиме."""
-            ret, frame = cap.read()
-            if ret:
-                frame_height, frame_width, _ = frame.shape
-                # aspect_ratio = frame_width / frame_height
-
-                imgtk = self.create_video_image(frame, video_width, video_height)
-                full_video_label.configure(image=imgtk)
-                full_video_label.imgtk = imgtk
-                full_video_label.after(33, update_fullscreen_video)
-            else:
-                cap.release()
-                top_level.destroy()
-
-        update_fullscreen_video()
-
-    def calculate_video_dimensions(self, aspect_ratio, box_width, box_height):
-        """Расчет оптимальных размеров видео для отображения."""
-        if aspect_ratio * box_height > box_width:
-            video_height = box_height
-            video_width = int(video_height * aspect_ratio)
-        else:
-            video_width = box_width
-            video_height = int(video_width / aspect_ratio)
-        return video_width, video_height
-
     def create_video_image(self, frame, video_width, video_height):
         """Создание изображения для отображения в интерфейсе из кадра видео."""
         frame_resized = cv2.resize(frame, (video_width, video_height))
@@ -251,6 +217,8 @@ class CameraPage(tk.Frame):
 
         # Время последнего сохранения
         last_save_time = time.time()
+        self.frame_count = 0  # Счетчик кадров для обработки каждого десятого кадра
+
         def analyze_and_update():
             """Функция анализа видео кадра и обновления интерфейса."""
             global max_count3, county3,  avg_acc3_list,  max_acc3, max_avg_acc3
@@ -260,9 +228,11 @@ class CameraPage(tk.Frame):
 
             ret, frame = cap.read()
             if ret:
-                imgtk = self.create_video_image(frame, video_width, video_height)
-                video_label.configure(image=imgtk)
-                video_label.imgtk = imgtk
+                self.frame_count += 1
+                if self.frame_count % 10 == 0:  # Обрабатываем только каждый десятый кадр
+                    imgtk = self.create_video_image(frame, video_width, video_height)
+                    video_label.configure(image=imgtk)
+                    video_label.imgtk = imgtk
 
                 # Анализируем изображение на наличие людей
                 img_resized = cv2.resize(frame, (video_width, video_height))  # Подгоняем размер кадра под детектор
@@ -303,7 +273,7 @@ class CameraPage(tk.Frame):
                 processing_speed_data.append(fps)
 
                 # Проверяем, нужно ли сохранять данные
-                if (time.time() - last_save_time) >= 5:
+                if (time.time() - last_save_time) >= 20:
                     insert_data(person, index, self.user_id)
                     last_save_time = time.time()
                 # Повторение обработки через заданный интервал
@@ -322,6 +292,44 @@ class CameraPage(tk.Frame):
 
         # Запускаем анализ и обновление изображения в отдельном потоке
         threading.Thread(target=analyze_and_update).start()
+
+    def toggle_fullscreen(self, cap, video_width, video_height):
+        """Переключение между полноэкранным режимом и обычным размером."""
+        top_level = tk.Toplevel()
+        top_level.attributes('-fullscreen', True)  # Устанавливаем атрибуты для полноэкранного режима
+        video_width, video_height = video_width * 4, video_height * 4
+        # Создаем видео лейбл для полноэкранного режима
+        full_video_label = tk.Label(top_level)
+        full_video_label.pack(fill="both", expand=True)
+
+        # Добавляем возможность выхода из полноэкранного режима по нажатию на клавишу 'Esc'
+        top_level.bind("<Escape>", lambda e: top_level.destroy())
+
+        def update_fullscreen_video():
+            """Обновление видео в полноэкранном режиме."""
+            ret, frame = cap.read()
+            if ret:
+                frame_height, frame_width, _ = frame.shape
+
+                imgtk = self.create_video_image(frame, video_width, video_height)
+                full_video_label.configure(image=imgtk)
+                full_video_label.imgtk = imgtk
+                full_video_label.after(33, update_fullscreen_video)
+            else:
+                cap.release()
+                top_level.destroy()
+
+        update_fullscreen_video()
+
+    def calculate_video_dimensions(self, aspect_ratio, box_width, box_height):
+        """Расчет оптимальных размеров видео для отображения."""
+        if aspect_ratio * box_height > box_width:
+            video_height = box_height
+            video_width = int(video_height * aspect_ratio)
+        else:
+            video_width = box_width
+            video_height = int(video_width / aspect_ratio)
+        return video_width, video_height
 
     def create_and_save_graphs(self, people_data, accuracy_data, processing_speed_data, class_id, user_id):
         """Создание и сохранение графиков по данным."""
