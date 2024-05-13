@@ -111,7 +111,7 @@ class HomePage(tk.Frame):
                             SELECT graph_path, graph_type_id, RANK() OVER (PARTITION BY graph_type_id ORDER BY upload_date DESC) as rk
                             FROM graphs
                         ) ranked_graphs
-                        WHERE rk = 1
+                        WHERE rk = 2
                     """)
                     rows = cur.fetchall()
                     return [row[0] for row in rows]

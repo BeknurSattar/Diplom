@@ -229,7 +229,7 @@ class CameraPage(tk.Frame):
             ret, frame = cap.read()
             if ret:
                 self.frame_count += 1
-                if self.frame_count % 10 == 0:  # Обрабатываем только каждый десятый кадр
+                if self.frame_count % 1 == 0:  #Обрадотка кадров
                     imgtk = self.create_video_image(frame, video_width, video_height)
                     video_label.configure(image=imgtk)
                     video_label.imgtk = imgtk
