@@ -97,11 +97,11 @@ class DataPage(tk.Frame):
             cur = self.conn.cursor()
             # Запрос данных о последних 10 детекциях по class_id
             cur.execute(
-                "SELECT detection_date, people_count FROM occupancy WHERE class_id = %s ORDER BY detection_date DESC LIMIT 10;",
-                (class_id-1,))
+                "SELECT detection_date, people_count FROM occupancy WHERE class_id = %s AND user_id = %s ORDER BY detection_date DESC LIMIT 10;",
+                (class_id, self.user_id))
             rows = cur.fetchall()
 
-            display_text = f"{translations[self.app.current_language]['last_10_detections'].format(class_id=class_id)}:\n\n"
+            display_text = f"{translations[self.app.current_language]['last_10_detections'].format(class_id=class_id)}\n\n"
             for row in rows:
                 display_text += f"{translations[self.app.current_language]['Datae']}: {row[0]}, {translations[self.app.current_language]['Caounte']}: {row[1]}\n"
             self.data_text.delete(1.0, tk.END)
