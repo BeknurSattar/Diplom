@@ -5,6 +5,7 @@ import threading
 import bcrypt
 
 
+
 # Функция подключения к базе данных
 def connect_db():
     try:
@@ -23,8 +24,8 @@ data_insert_timer = None
 # Функция для вставки данных в базу данных
 from datetime import datetime
 
-def insert_data(people_count, class_id, user_id):
-    """Вставляет данные о количестве людей, дате обнаружения, идентификаторе класса и идентификаторе пользователя в базу данных."""
+def insert_data(people_count, class_id, user_id, session_start):
+    """Вставляет данные о количестве людей, дате обнаружения, идентификаторе класса, идентификаторе пользователя и времени начала сессии в базу данных."""
     conn = None
     try:
         conn = connect_db()  # Предполагается, что функция connect_db() возвращает объект соединения
@@ -32,9 +33,9 @@ def insert_data(people_count, class_id, user_id):
             raise Exception("Не удалось подключиться к базе данных.")
 
         cur = conn.cursor()
-        # Добавляем user_id в запрос
-        cur.execute("INSERT INTO occupancy (detection_date, people_count, class_id, user_id) VALUES (%s, %s, %s, %s)",
-                    (datetime.now(), people_count, class_id, user_id))
+        # Добавляем session_start в запрос
+        cur.execute("INSERT INTO occupancy (detection_date, people_count, class_id, user_id, session_start) VALUES (%s, %s, %s, %s, %s)",
+                    (datetime.now(), people_count, class_id, user_id, session_start))
         conn.commit()
         cur.close()
         print("Данные успешно вставлены.")
@@ -43,7 +44,6 @@ def insert_data(people_count, class_id, user_id):
     finally:
         if conn is not None:
             conn.close()
-
 # Установка периодического вставления данных
 def start_periodic_data_insert(person, class_id, interval=5000):
     """Запускает периодическое вставление данных в базу данных."""

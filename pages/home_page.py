@@ -100,21 +100,32 @@ class HomePage(tk.Frame):
             messagebox.showerror(translations[self.app.current_language]['error'], error_msg)
 
     def fetch_latest_graphs(self):
-        # Извлечение путей к последним графикам каждого класса из базы данных
+        # Извлечение путей к последним графикам каждого типа графика, добавленных этим пользователем, из базы данных
         conn = connect_db()
         if conn:
             try:
                 with conn.cursor() as cur:
+                    # Сначала получаем время последней сессии для каждого типа графика
                     cur.execute("""
-                        SELECT graph_path
-                        FROM (
-                            SELECT graph_path, graph_type_id, RANK() OVER (PARTITION BY graph_type_id ORDER BY upload_date DESC) as rk
-                            FROM graphs
-                        ) ranked_graphs
-                        WHERE rk = 2
-                    """)
-                    rows = cur.fetchall()
-                    return [row[0] for row in rows]
+                        SELECT graph_type_id, MAX(session_start) as last_session_start
+                        FROM graphs
+                        WHERE user_id = %s
+                        GROUP BY graph_type_id
+                    """, (self.user_id,))
+                    latest_sessions = cur.fetchall()
+
+                    # Затем, для каждого типа графика, получаем путь к последнему графику из последней сессии
+                    graph_paths = []
+                    for graph_type_id, last_session_start in latest_sessions:
+                        cur.execute("""
+                            SELECT graph_path FROM graphs
+                            WHERE graph_type_id = %s AND session_start = %s AND user_id = %s;
+                        """, (graph_type_id, last_session_start, self.user_id))
+                        result = cur.fetchone()
+                        if result:
+                            graph_paths.append(result[0])
+
+                    return graph_paths
             except psycopg2.Error as e:
                 error_msg = translations[self.app.current_language]['database_query_error'].format(error=e)
                 messagebox.showerror(translations[self.app.current_language]['database_error'], error_msg)
@@ -143,12 +154,15 @@ class HomePage(tk.Frame):
                 tree = ttk.Treeview(frame, columns=('class_id', 'people_count'), show='headings')
                 tree.heading('class_id', text=translations[self.app.current_language]['class_id'])
                 tree.heading('people_count', text=translations[self.app.current_language]['people_count'])
+
                 with conn.cursor() as cur:
+                    # Фильтрация данных по user_id, отображение максимального количества людей для каждого class_id, добавленного этим пользователем
                     cur.execute("""
                         SELECT class_id, MAX(people_count) FROM occupancy
+                        WHERE user_id = %s
                         GROUP BY class_id
                         ORDER BY class_id
-                    """)
+                    """, (self.user_id,))
                     for row in cur:
                         tree.insert('', tk.END, values=row)
                 tree.pack()

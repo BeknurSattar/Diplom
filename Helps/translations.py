@@ -37,7 +37,7 @@ translations = {
         "choose_new_image": "Choose new profile image",
         "image_filetypes": [("Image files", "*.png;*.jpg;*.jpeg")],
         "data_page_title": "Data Page",
-        "last_10_detections": "Last 10 detections for class {class_id}:",
+        "last_10_detections": "Last detections for class {class_id}:",
         "show_data": "Show Data",
         "graph": "Graph",
         "back_to_menu": "Back to Menu",
@@ -135,6 +135,8 @@ translations = {
         "nomerz": "Entry no.",
         "fullscreen": "Fullscreen",
         "help": "help",
+        "no_graph_saved": "No graph saved",
+        "no_recent_sessions": "No recent sessions",
     },
     "ru": {
         "change_theme": "Сменить тему",
@@ -173,7 +175,7 @@ translations = {
         "choose_new_image": "Выберите новое изображение профиля",
         "image_filetypes": [("Image files", "*.png;*.jpg;*.jpeg")],
         "data_page_title": "Страница данных",
-        "last_10_detections": "Последние 10 обнаружений для класса {class_id}:",
+        "last_10_detections": "Последние обнаружений для класса {class_id}:",
         "show_data": "Показать данные",
         "graph": "График",
         "back_to_menu": "Вернуться в меню",
@@ -271,6 +273,8 @@ translations = {
         "nomerz": "№ записи",
         "fullscreen": "Увеличить",
         "help": "инструкция",
+        "no_graph_saved": "Ползователь не сохранил график",
+        "no_recent_sessions": "Нет последних сессий",
     },
     "kz": {
         "change_theme": "Тақырыпты өзгерту",
@@ -309,7 +313,7 @@ translations = {
         "choose_new_image": "Жаңа профиль суретін таңдаңыз",
         "image_filetypes": [("Image files", "*.png;*.jpg;*.jpeg")],
         "data_page_title": "Деректер беті",
-        "last_10_detections": "Соңғы 10 анықтама {class_id} үшін:",
+        "last_10_detections": "Соңғы анықтама {class_id} үшін:",
         "show_data": "Деректерді көрсету",
         "graph": "Диаграмма",
         "back_to_menu": "Мәзірге оралу",
@@ -407,6 +411,8 @@ translations = {
         "nomerz": "Кіру №.",
         "fullscreen": "Үлкейту",
         "help": "нұсқаулар",
+        "no_graph_saved": "График сақталмаған",
+        "no_recent_sessions": "Cоңғы сеанстар жоқ",
     }
 
 }

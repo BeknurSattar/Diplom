@@ -91,14 +91,21 @@ class DataPage(tk.Frame):
         self.back_button.pack(pady=10)
 
     def fetch_and_display_data(self, class_id):
-        """Получение и отображение данных."""
+        """Получение и отображение данных о последних 10 детекциях и данных последнего обработанного видео."""
         try:
             self.conn = connect_db()
             cur = self.conn.cursor()
+
+            # Получение времени начала последней сессии
+            cur.execute(
+                "SELECT MAX(session_start) FROM occupancy WHERE class_id = %s AND user_id = %s;",
+                (class_id, self.user_id))
+            last_session_start = cur.fetchone()[0]
+
             # Запрос данных о последних 10 детекциях по class_id
             cur.execute(
-                "SELECT detection_date, people_count FROM occupancy WHERE class_id = %s AND user_id = %s ORDER BY detection_date DESC LIMIT 10;",
-                (class_id, self.user_id))
+                "SELECT detection_date, people_count FROM occupancy WHERE class_id = %s AND user_id = %s AND session_start = %s",
+                (class_id, self.user_id, last_session_start))
             rows = cur.fetchall()
 
             display_text = f"{translations[self.app.current_language]['last_10_detections'].format(class_id=class_id)}\n\n"
@@ -107,9 +114,9 @@ class DataPage(tk.Frame):
             self.data_text.delete(1.0, tk.END)
             self.data_text.insert(tk.END, display_text)
             cur.close()
-            self.conn.close()
         except psycopg2.Error as e:
-            messagebox.showerror(translations[self.app.current_language]['database_error'], translations[self.app.current_language]['fetch_data_error'].format(error=e))
+            messagebox.showerror(translations[self.app.current_language]['database_error'],
+                                 translations[self.app.current_language]['fetch_data_error'].format(error=e))
         finally:
             if self.conn:
                 self.conn.close()
@@ -132,28 +139,40 @@ class DataPage(tk.Frame):
         else:
             messagebox.showerror(translations[self.app.current_language]['error'], translations[self.app.current_language]['graph_not_found_error'])
 
-
     def load_graph_from_db(self, class_id, graph_number):
-        """Загрузка графика из базы данных."""
+        """Загрузка графика из базы данных, соответствующего последнему обработанному видео."""
         try:
             self.conn = connect_db()
             cur = self.conn.cursor()
-            # Обновленный способ получения graph_type_id
-            graph_type_id = graph_number  # Теперь graph_number напрямую соответствует graph_type_id
+            # Получаем время начала последней сессии для данного class_id
             cur.execute("""
-                SELECT graph_path FROM graphs
-                WHERE class_id = %s AND graph_type_id = %s
-                ORDER BY upload_date DESC LIMIT 1;
-            """, (class_id, graph_type_id))
-            graph_path = cur.fetchone()
-            if graph_path:
-                img = Image.open(graph_path[0])
-                return img
+                SELECT MAX(session_start) FROM graphs
+                WHERE class_id = %s AND graph_type_id = %s;
+            """, (class_id, graph_number))
+            last_session_start = cur.fetchone()[0]
+
+            if last_session_start:
+                # Используем время последней сессии для фильтрации нужного графика
+                cur.execute("""
+                    SELECT graph_path FROM graphs
+                    WHERE class_id = %s AND graph_type_id = %s AND session_start = %s;
+                """, (class_id, graph_number, last_session_start))
+                graph_path = cur.fetchone()
+                if graph_path:
+                    img = Image.open(graph_path[0])
+                    return img
+                else:
+                    messagebox.showinfo(translations[self.current_language]['error'],
+                                        translations[self.app.current_language]['no_graph_saved'])
+                    return None
             else:
+                messagebox.showinfo(translations[self.current_language]['error'],
+                                    translations[self.app.current_language]['no_recent_sessions'])
                 return None
-            # cur.close()
+
         except psycopg2.Error as e:
-            messagebox.showerror(translations[self.current_language]['error'], translations[self.app.current_language]['fetch_data_error'].format(error=e))
+            messagebox.showerror(translations[self.current_language]['error'],
+                                 translations[self.app.current_language]['fetch_data_error'].format(error=e))
         finally:
             if self.conn:
                 self.conn.close()
@@ -285,22 +304,31 @@ class DataPage(tk.Frame):
             self.conn.close()
 
         return username, translated_position
+
     def fetch_data_for_ot4et(self, class_id):
-        """Запрос данных для отчета, возвращает каждую тысячную запись."""
+        """Запрос данных для отчета, начиная с последней обработанной видеосессии."""
         self.conn = connect_db()
         cur = self.conn.cursor()
         try:
-            cur.execute("SELECT detection_date, people_count FROM occupancy WHERE class_id = %s ORDER BY detection_date;",
-                    (class_id,))
-            rows = cur.fetchall()
-            self.conn.close()
+            # Определяем время начала последней сессии обработки
+            cur.execute(
+                "SELECT MAX(session_start) FROM occupancy WHERE class_id = %s AND user_id = %s;",
+                (class_id, self.user_id))
+            last_session_start = cur.fetchone()[0]
 
-        # Возвращаем каждую тысячную запись
-            filtered_rows = [row for index, row in enumerate(rows) if index % 1000 == 0]
-            return filtered_rows
+            if last_session_start:
+                # Выбор данных после начала последней сессии
+                cur.execute(
+                    "SELECT detection_date, people_count FROM occupancy WHERE class_id = %s AND user_id = %s AND session_start = %s ORDER BY detection_date;",
+                    (class_id, self.user_id, last_session_start))
+                rows = cur.fetchall()
+                return rows
+            else:
+                return []  # Если не найдена последняя сессия, возвращаем пустой список
         finally:
             cur.close()
             self.conn.close()
+
     def set_cell_border(self, cell, **kwargs):
         """
         Set cell's border
@@ -341,15 +369,33 @@ class DataPage(tk.Frame):
                         element.set(qn('w:{}'.format(key)), str(edge_data[key]))
 
     def load_graph_path_from_db(self, class_id, graph_number):
-        """Загрузка пути к графику из базы данных для отчета."""
-        self.conn = connect_db()
-        cur = self.conn.cursor()
-        cur.execute(
-            "SELECT graph_path FROM graphs WHERE class_id = %s AND graph_type_id = %s ORDER BY upload_date DESC LIMIT 1;",
-            (class_id, graph_number))
-        result = cur.fetchone()
-        self.conn.close()
-        return result[0] if result else None
+        """Загрузка пути к графику из базы данных, соответствующего последнему обработанному видео."""
+        try:
+            self.conn = connect_db()
+            cur = self.conn.cursor()
+            # Сначала найдем время начала последней сессии обработки для данного class_id и graph_type_id
+            cur.execute("""
+                SELECT MAX(session_start) FROM graphs
+                WHERE class_id = %s AND graph_type_id = %s AND user_id = %s;
+            """, (class_id, graph_number, self.user_id))
+            last_session_start = cur.fetchone()[0]
+
+            if last_session_start:
+                # Теперь получаем путь к графику из последней сессии обработки
+                cur.execute("""
+                    SELECT graph_path FROM graphs
+                    WHERE class_id = %s AND graph_type_id = %s AND session_start = %s AND user_id = %s;
+                """, (class_id, graph_number, last_session_start, self.user_id))
+                result = cur.fetchone()
+                return result[0] if result else None
+            else:
+                return None
+        except Exception as e:
+            messagebox.showerror(translations[self.current_language]['error'],
+                                 translations[self.app.current_language]['connection_database_error'].format(error=e))
+        finally:
+            if self.conn:
+                self.conn.close()
 
     def create_button(self, index):
         """Создание кнопки для аудитории и сохранение ссылки на неё."""

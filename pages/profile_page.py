@@ -13,6 +13,7 @@ class ProfilePage(tk.Frame):
     def __init__(self, parent, user_id=None):
         super().__init__(parent)
         self.user_id = user_id
+        self.current_language = 'ru'  # Устанавливаем русский язык по умолчанию
         self.image_path = None
         self.photo_label = None  # Инициализируем здесь, чтобы всегда существовал
         self.label_username = None  # Предварительная инициализация
@@ -107,7 +108,10 @@ class ProfilePage(tk.Frame):
                 cursor.close()
                 if user_info:
                     self.display_user_image(user_info[3] or "Images/icon.jpg")
-                    self.username, self.email, self.position, self.image_path = user_info
+                    self.username, self.email, self.image_path = user_info[0], user_info[1], user_info[3]
+
+                    # Переводим название должности
+                    self.position = translations[self.current_language]['positions'].get(user_info[2], user_info[2])
                     self.display_user_info()
                 else:
                     tk.Label(self, text=translations[self.current_language]['Profile_not_found'], font=("Arial", 16)).pack(pady=20)

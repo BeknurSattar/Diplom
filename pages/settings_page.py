@@ -27,6 +27,7 @@ class SettingsPage(tk.Frame):
         self.current_language = language
         # Обновляем текст на всех кнопках и метках
         self.theme_button.config(text=translations[language]['change_theme'])
+        self.help_button.config(text=translations[language]['help'])
         self.language_label.config(text=translations[language]['select_language'])
         self.exit_button.config(text=translations[language]['exit'])
         # Обновляем текст на других страницах (если это необходимо)
@@ -80,8 +81,7 @@ class SettingsPage(tk.Frame):
         self.theme_button.pack(fill="x", pady=(0, 10), ipady=5)
 
         # Кнопка Help
-        self.help_button = tk.Button(self.content, text=translations[self.current_language]['help'],
-                                     command=self.open_help_document, bg="#1976D2", fg="white")
+        self.help_button = tk.Button(self.content, command=self.open_help_document, bg="#1976D2", fg="white")
         self.help_button.pack(fill="x", pady=(0, 10), ipady=5)
 
         self.language_label = tk.Label(self.content, bg="#f0f0f0")

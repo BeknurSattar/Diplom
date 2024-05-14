@@ -29,6 +29,7 @@ class CameraPage(tk.Frame):
         self.odapi = DetectorAPI()  # Подключение API для обнаружения объектов в видео
         self.queue = queue.Queue()
         self.threads = []
+        self.session_start = datetime.now()  # Сохраняем время начала сессии обработки
         self.get_video_files()
         self.get_content()
 
@@ -180,7 +181,7 @@ class CameraPage(tk.Frame):
 
                 # Добавим кнопку для сохранения графиков, которая будет активирована позже
                 self.save_button = tk.Button(box, text=translations[self.current_language]['save_graphs'], command=lambda:
-                                                    self.create_and_save_graphs(self.people_data, self.accuracy_data, self.processing_speed_data, index, self.user_id),
+                                                    self.create_and_save_graphs(self.people_data, self.accuracy_data, self.processing_speed_data, index, self.user_id, self.session_start),
                                                     state=tk.DISABLED)
                 self.save_button.pack(side="left", padx=5)
 
@@ -217,6 +218,8 @@ class CameraPage(tk.Frame):
 
         # Время последнего сохранения
         last_save_time = time.time()
+        session_start = self.session_start  # Используем сохраненное время начала сессии
+
         self.frame_count = 0  # Счетчик кадров для обработки каждого десятого кадра
 
         def analyze_and_update():
@@ -273,8 +276,8 @@ class CameraPage(tk.Frame):
                 processing_speed_data.append(fps)
 
                 # Проверяем, нужно ли сохранять данные
-                if (time.time() - last_save_time) >= 20:
-                    insert_data(person, index, self.user_id)
+                if (time.time() - last_save_time) >= 5:
+                    insert_data(person, index, self.user_id, session_start)
                     last_save_time = time.time()
                 # Повторение обработки через заданный интервал
                 video_label.after(33, analyze_and_update)
@@ -331,8 +334,9 @@ class CameraPage(tk.Frame):
             video_height = int(video_width / aspect_ratio)
         return video_width, video_height
 
-    def create_and_save_graphs(self, people_data, accuracy_data, processing_speed_data, class_id, user_id):
-        """Создание и сохранение графиков по данным."""
+    def create_and_save_graphs(self, people_data, accuracy_data, processing_speed_data, class_id, user_id,
+                               session_start):
+        """Создание и сохранение графиков по данным, с записью времени начала сессии."""
         base_directory = 'saved_graphs'
         if not os.path.exists(base_directory):
             os.makedirs(base_directory)
@@ -375,10 +379,10 @@ class CameraPage(tk.Frame):
                     plt.savefig(graph_filename)
                     plt.close()
 
-                    # Сохраняем информацию о графике в базу данных
+                    # Сохраняем информацию о графике в базу данных, добавляя session_start
                     cursor.execute(
-                        "INSERT INTO graphs (user_id, class_id, graph_type_id, graph_path, upload_date) VALUES (%s, %s, %s, %s, %s);",
-                        (user_id, class_id, graph_type_id, graph_filename, datetime.now()))
+                        "INSERT INTO graphs (user_id, class_id, graph_type_id, graph_path, upload_date, session_start) VALUES (%s, %s, %s, %s, %s, %s);",
+                        (user_id, class_id, graph_type_id, graph_filename, datetime.now(), session_start))
 
                 conn.commit()
                 print(translations[self.app.current_language]['graphs_created_and_saved'])
