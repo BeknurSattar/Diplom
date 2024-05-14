@@ -5,6 +5,28 @@ import tkinter as tk
 from test import Page  # Импортируй твой основной класс, здесь предполагается, что он находится в файле main.py
 from pages.camera_page import CameraPage
 from pages.data_page import DataPage
+class TestPage(unittest.TestCase):
+    def setUp(self):
+        # Инициализация окна приложения
+        self.app = Page()
+        self.app.attributes = MagicMock()  # Мокаем метод attributes
+
+    def test_toggle_fullscreen(self):
+        # Первоначально режим полного экрана выключен
+        self.assertFalse(self.app.full_screen)
+
+        # Переключаем в полноэкранный режим
+        self.app.toggle_fullscreen()
+        self.assertTrue(self.app.full_screen)
+        self.app.attributes.assert_called_with('-fullscreen', True)
+
+        # Переключаем обратно в оконный режим
+        self.app.toggle_fullscreen()
+        self.assertFalse(self.app.full_screen)
+        self.app.attributes.assert_called_with('-fullscreen', False)
+
+    def tearDown(self):
+        self.app.destroy()
 
 class TestDataPage(unittest.TestCase):
     def setUp(self):

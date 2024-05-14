@@ -1,8 +1,6 @@
 import tkinter as tk
 from tkinter import messagebox
-import shelve
 import os
-from datetime import datetime, timedelta
 from PIL import Image, ImageTk
 from Helps.translations import translations
 from pages.home_page import HomePage
