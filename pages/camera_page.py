@@ -10,6 +10,7 @@ import datetime
 from Helps.utils import *
 import cv2
 from detection.persondetection import DetectorAPI
+from concurrent.futures import ThreadPoolExecutor
 import asyncio
 import concurrent.futures
 
@@ -26,8 +27,12 @@ class CameraPage(tk.Frame):
         self.layout = 1
         # Загрузка списка доступных видео файлов с учетом должности пользователя
         self.videos = self.get_video_files_for_user()
-        self.odapi = DetectorAPI()  # Подключение API для обнаружения объектов в видео
+        model_path = os.path.abspath('runs/detect/train2/weights/best.pt')
+        model_path1 = os.path.abspath('yolov8m.pt')
+        self.odapi = DetectorAPI(model_path=model_path)  # Подключение API для обнаружения объектов в видео
         self.queue = queue.Queue()
+        self.executor = ThreadPoolExecutor(max_workers=4)  # Максимальное количество потоков
+
         self.threads = []
         self.session_start = datetime.now()  # Сохраняем время начала сессии обработки
         self.get_video_files()
@@ -240,34 +245,33 @@ class CameraPage(tk.Frame):
                 # Анализируем изображение на наличие людей
                 img_resized = cv2.resize(frame, (video_width, video_height))  # Подгоняем размер кадра под детектор
                 boxes, scores, classes, num = self.odapi.processFrame(img_resized)
-                person = 0
                 acc = 0
 
                 for i in range(len(boxes)):
-                    if classes[i] == 1 and scores[i] > threshold:
+                    if classes[i] == 0 and scores[i] > threshold:  # YOLOv8: класс '0' - человек
                         box = boxes[i]
-                        person += 1
+
                         cv2.rectangle(img_resized, (box[1], box[0]), (box[3], box[2]), (255, 0, 0), 2)  # cv2.FILLED
-                        cv2.putText(img_resized, f'P{person, round(scores[i], 2)}', (box[1] - 30, box[0] - 8),
+                        cv2.putText(img_resized, f'P{int(num), round(scores[i], 2)}', (box[1] - 30, box[0] - 8),
                                     cv2.FONT_HERSHEY_COMPLEX, 0.5, (0, 0, 255), 1)  # (75,0,130),
                         acc += scores[i]
-                        if (scores[i] > max_acc3):
+                        if scores[i] > max_acc3:
                             max_acc3 = scores[i]
-                if (person > max_count3):
-                    max_count3 = person
+                if int(num) > max_count3:
+                    max_count3 = int(num)
 
-                county3.append(person)
+                county3.append(int(num))
 
-                if (person >= 1):
-                    avg_acc3_list.append(acc / person)
-                    if ((acc / person) > max_avg_acc3):
-                        max_avg_acc3 = (acc / person)
+                if (int(num) >= 1):
+                    avg_acc3_list.append(acc / int(num))
+                    if ((acc / int(num)) > max_avg_acc3):
+                        max_avg_acc3 = (acc / int(num))
                 else:
                     avg_acc3_list.append(acc)
 
                 # Сохранение данных
-                people_data.append(person)
-                accuracy_data.append(acc / person if person > 0 else 0)
+                people_data.append(int(num))
+                accuracy_data.append(acc / int(num) if int(num) > 0 else 0)
 
                 # Подсчет скорости обработки
                 end_time = time.time()  # Засекаем время окончания обработки кадра
@@ -277,10 +281,11 @@ class CameraPage(tk.Frame):
 
                 # Проверяем, нужно ли сохранять данные
                 if (time.time() - last_save_time) >= 5:
-                    insert_data(person, index, self.user_id, session_start)
+                    detected_people = int(num)
+                    insert_data(detected_people, index, self.user_id, session_start)
                     last_save_time = time.time()
                 # Повторение обработки через заданный интервал
-                video_label.after(33, analyze_and_update)
+                video_label.after(60, analyze_and_update)
             else:
                 # Создаем графики и сохраняем их
                 # Видео закончилось, активируем кнопку сохранения графиков
@@ -293,8 +298,10 @@ class CameraPage(tk.Frame):
 
 
 
+        # # Запускаем анализ и обновление изображения в отдельном потоке
+        # threading.Thread(target=analyze_and_update).start()
         # Запускаем анализ и обновление изображения в отдельном потоке
-        threading.Thread(target=analyze_and_update).start()
+        self.executor.submit(analyze_and_update)
 
     def toggle_fullscreen(self, cap, video_width, video_height):
         """Переключение между полноэкранным режимом и обычным размером."""

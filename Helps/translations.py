@@ -137,6 +137,12 @@ translations = {
         "help": "help",
         "no_graph_saved": "No graph saved",
         "no_recent_sessions": "No recent sessions",
+        "Password_too_short": "Password too short",
+        "Password_needs_uppercase": "Password need suppercase",
+        "Password_needs_lowercase": "Password needs lowercase",
+        "Password_needs_digit": "Password needs digit",
+        "Password_needs_special": "Password needs special",
+        "Password_requirements": "Password requirements",
     },
     "ru": {
         "change_theme": "Сменить тему",
@@ -275,6 +281,12 @@ translations = {
         "help": "инструкция",
         "no_graph_saved": "Ползователь не сохранил график",
         "no_recent_sessions": "Нет последних сессий",
+        "Password_too_short": "Пароль слишком короткий",
+        "Password_needs_uppercase": "Пароль нужен в верхнем регистре",
+        "Password_needs_lowercase": "Пароль должен быть в нижнем регистре",
+        "Password_needs_digit": "Для пароля нужна цифра",
+        "Password_needs_special": "Пароль нужен специальный символ",
+        "Password_requirements": "Требования к паролю",
     },
     "kz": {
         "change_theme": "Тақырыпты өзгерту",
@@ -413,6 +425,12 @@ translations = {
         "help": "нұсқаулар",
         "no_graph_saved": "График сақталмаған",
         "no_recent_sessions": "Cоңғы сеанстар жоқ",
+        "Password_too_short": "Құпия сөз тым қысқа",
+        "Password_needs_uppercase": "Құпия сөз бас әріппен жазылуы керек",
+        "Password_needs_lowercase": "Құпия сөз кіші әріппен жазылуы керек",
+        "Password_needs_digit": "Құпия сөз нөмірді қажет етеді",
+        "Password_needs_special": "Құпия сөзге арнайы таңба қажет",
+        "Password_requirements": "Құпия сөзге қойылатын талаптар",
     }
 
 }

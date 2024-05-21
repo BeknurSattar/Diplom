@@ -10,7 +10,7 @@ class RegisterPage(tk.Toplevel):
     def __init__(self, parent, language='ru'):
         super().__init__(parent)
         self.title()
-        self.geometry("300x500")
+        self.geometry("300x600")
         self.resizable(False, False)
         self.configure(bg="#f0f0f0")
         self.parent = parent
@@ -26,6 +26,7 @@ class RegisterPage(tk.Toplevel):
         self.label_password.config(text=translations[self.current_language]['Password'])
         self.label_confirm_password.config(text=translations[self.current_language]['Confirm_password'])
         self.label_position.config(text=translations[self.current_language]['Position'])
+        self.label_password_requirements.config(text=translations[self.current_language]['Password_requirements'])
         self.button_register.config(text=translations[self.current_language]['Register'])
         self.show_password_button.config(text=translations[self.current_language]['Show_password'])
         self.login_button.config(text=translations[self.current_language]['Already_registered'])
@@ -54,6 +55,10 @@ class RegisterPage(tk.Toplevel):
         self.label_confirm_password.pack(pady=(5, 5))
         self.entry_confirm_password = tk.Entry(self, show="*", **entry_style)
         self.entry_confirm_password.pack(pady=5)
+
+        # Добавляем текст для требований к паролю
+        self.label_password_requirements = tk.Label(self, **label_style)
+        self.label_password_requirements.pack(pady=(5, 5))
 
         # Загрузка и отображение должностей
         self.label_position = tk.Label(self, **label_style)
@@ -132,6 +137,20 @@ class RegisterPage(tk.Toplevel):
                 return []
         return []
 
+    def validate_password(self, password):
+        """Проверка пароля на соответствие требованиям."""
+        if len(password) < 8:
+            return False, translations[self.current_language]['Password_too_short']
+        if not re.search(r'[A-Z]', password):
+            return False, translations[self.current_language]['Password_needs_uppercase']
+        if not re.search(r'[a-z]', password):
+            return False, translations[self.current_language]['Password_needs_lowercase']
+        if not re.search(r'[0-9]', password):
+            return False, translations[self.current_language]['Password_needs_digit']
+        if not re.search(r'[!@#\$%\^&\*(),.?":{}|<>]', password):
+            return False, translations[self.current_language]['Password_needs_special']
+        return True, ""
+
     def register(self):
         """Регистрация нового пользователя."""
         username = self.entry_username.get()
@@ -160,6 +179,11 @@ class RegisterPage(tk.Toplevel):
 
         if password != confirm_password:
             messagebox.showerror(translations[self.current_language]['error'], translations[self.current_language]['Password_mismatch'])
+            return
+
+        is_valid, validation_msg = self.validate_password(password)
+        if not is_valid:
+            messagebox.showerror(translations[self.current_language]['error'], validation_msg)
             return
 
         hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')  # Хеширование пароля
