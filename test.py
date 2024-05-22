@@ -1,272 +1,620 @@
+import unittest
+from unittest.mock import patch, MagicMock
 import tkinter as tk
-from tkinter import messagebox
+import numpy as np
 import os
-from PIL import Image, ImageTk
-from Helps.translations import translations
+import datetime
+from main import Page
+from detection.persondetection import DetectorAPI
+from pages.auth_page import AuthPage
+from pages.register import RegisterPage
 from pages.home_page import HomePage
+from pages.profile_page import ProfilePage
 from pages.data_page import DataPage
 from pages.camera_page import CameraPage
 from pages.settings_page import SettingsPage
-from pages.profile_page import ProfilePage
-from pages.auth_page import AuthPage
 from Helps.utils import *
+from Helps.translations import translations
+class TestPage(unittest.TestCase):
+    """
+    Тесты для класса Page из main.py.
+    Тестирует загрузку сессии из базы данных, переключение полноэкранного режима, смену языка и навигацию между страницами.
+    """
+    def setUp(self):
+        self.app = Page()
 
-class Page(tk.Tk):
-    def __init__(self):
-        super().__init__()
+    @patch('main.connect_db')  # Обновите путь для мока connect_db
+    def test_load_session_from_db(self, mock_connect_db):
+        # Настройка моков базы данных
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_connect_db.return_value = mock_conn
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.fetchone.return_value = (1, True, 'ru')
 
-        self.title("AnaLiz")
-        self.geometry("800x600")  # Установка размеров окна
+        result = self.app.load_session_from_db()
 
-        # Управление окном
-        self.full_screen = False
-        self.bind("<F11>", self.toggle_fullscreen)
-        self.bind("<Escape>", self.end_fullscreen)
+        # Проверка результатов
+        self.assertTrue(result)
+        self.assertEqual(self.app.user_id, 1)
+        self.assertTrue(self.app.is_authenticated)
+        self.assertEqual(self.app.current_language, 'ru')
 
-        # Начальный цвета приложения
-        self.current_theme_bg = "#f0f0f0"
-        self.current_theme_fg = "black"
-        self.configure(bg="#f0f0f0")
+    def test_toggle_fullscreen(self):
+        # Первоначально режим полного экрана выключен
+        self.assertFalse(self.app.full_screen)
 
-        # Инициализация пути к директории сессии
-        self.session_dir = os.path.join(os.path.expanduser('~'), 'AnaLizSessions')
-        if not os.path.exists(self.session_dir):
-            os.makedirs(self.session_dir)
+        # Переключаем в полноэкранный режим
+        self.app.toggle_fullscreen()
+        self.assertTrue(self.app.full_screen)
+        self.assertTrue(self.app.attributes('-fullscreen'))
 
-        self.translations = translations
-        self.current_language = 'ru'  # Устанавливаем русский язык по умолчанию
+        # Переключаем обратно в оконный режим
+        self.app.toggle_fullscreen()
+        self.assertFalse(self.app.full_screen)
+        self.assertFalse(self.app.attributes('-fullscreen'))
 
-        # Состояние аутентификации пользователя
-        self.is_authenticated = False
-        self.user_id = None  # Инициализация user_id с None
+    def test_set_language(self):
+        # Проверка начального языка
+        self.assertEqual(self.app.current_language, 'ru')
 
-        self.selected_index = 0  # Индекс выбранной вкладки в навигации
+        # Смена языка на английский
+        self.app.set_language('en')
 
-        # Попытка загрузить активную сессию, и если она есть, то не требовать повторной аутентификации
-        if not self.load_session_from_db():
-            self.check_authentication()
-        else:
-            self.create_widgets()
+        # Проверка, что язык изменился
+        self.assertEqual(self.app.current_language, 'en')
+        self.assertEqual(self.app.home_button.cget('text'), translations['en']['home'])
+        self.assertEqual(self.app.profile_button.cget('text'), translations['en']['profile'])
+        self.assertEqual(self.app.exit_button.cget('text'), translations['en']['exit'])
 
-        # Обработка закрытия окна
-        self.protocol("WM_DELETE_WINDOW", self.on_close)
+    def test_navigation(self):
+        # Проверка начального состояния
+        self.assertEqual(self.app.selected_index, 0)
 
-    # Смена языка
-    def set_language(self, language):
-        self.current_language = language
-        # Обновляем тексты на всех кнопках
-        self.home_button.config(text=self.translations[language]['home'])
-        self.profile_button.config(text=self.translations[language]['profile'])
-        self.exit_button.config(text=self.translations[language]['exit'])
-        for i, button in enumerate(self.navigation_buttons):
-            button.config(text=self.translations[language][self.pages[i].translation_key])
+        # Переход на страницу DataPage
+        self.app.on_navigation_selected(1)
+        self.assertEqual(self.app.selected_index, 1)
 
-        # Обновляем страницы
-        self.update_body_content()
+        # Переход на страницу CameraPage
+        self.app.on_navigation_selected(2)
+        self.assertEqual(self.app.selected_index, 2)
 
-    # Сохранение данных о сеансе в базу
-    def save_session(self):
-        """Сохраняет текущее состояние сессии в базу данных PostgreSQL."""
-        conn = None
-        try:
-            conn = connect_db()
-            cur = conn.cursor()
-            # Подготовка и выполнение запроса на вставку данных сессии
-            cur.execute(
-                "INSERT INTO sessions (user_id, authenticated, language, last_access) VALUES (%s, %s, %s, %s)",
-                (self.user_id, self.is_authenticated, self.current_language, datetime.now())
-            )
-            conn.commit()  # Подтверждение изменений
-            cur.close()
-        except psycopg2.DatabaseError as error:
-            print("Ошибка базы данных:", error)
-        finally:
-            if conn is not None:
-                conn.close()
+    def tearDown(self):
+        if self.app:
+            self.app.update()
+            self.app.destroy()
 
-    # Загрузка данных о сеансе из базы
-    def load_session_from_db(self):
-        """Загружает последнюю активную сессию пользователя из базы данных."""
-        conn = None
-        try:
-            conn = connect_db()
-            cur = conn.cursor()
-            cur.execute("SELECT user_id, authenticated, language FROM sessions ORDER BY last_access DESC LIMIT 1")
-            result = cur.fetchone()
+class TestDetectorAPI(unittest.TestCase):
+    """
+    Тесты для класса DetectorAPI из detection.persondetection.
+    Тестирует инициализацию модели и обработку видео кадров.
+    """
+    def setUp(self):
+        # Мокаем модель YOLO
+        self.mock_model = MagicMock()
+        self.model_path = 'runs/detect/train2/weights/best.pt'
 
-            if result:
-                self.user_id, self.is_authenticated, self.current_language = result
-                if self.is_authenticated:
-                    return True
-            return False
-        except psycopg2.DatabaseError as error:
-            print("Ошибка базы данных:", error)
-            return False
-        finally:
-            if conn:
-                conn.close()
+        # Патчим инициализацию модели YOLO, чтобы использовать мок вместо реальной модели
+        patcher = patch('detection.persondetection.YOLO', return_value=self.mock_model)
+        self.addCleanup(patcher.stop)
+        self.mock_yolo = patcher.start()
 
-    # Проверка на авторизацию
-    def check_authentication(self):
-            try:
-                login_window = AuthPage(self)  # Создание окна аутентификации
-                login_window.attributes('-topmost', True)  # Установка окна аутентификации поверх других окон
-                self.wait_window(login_window)  # Ожидание закрытия окна аутентификации
-                if login_window.is_authenticated:
-                    self.user_id = login_window.user_id
-                    self.is_authenticated = True
-                    self.create_widgets()
-                    self.set_language(login_window.selected_language)  # Установка языка из AuthPage
-                    self.lift()  # Поднимаем окно приложения на передний план
-                    self.attributes('-topmost', False)
-                else:
-                    self.destroy()  # Закрытие приложения, если аутентификация не пройдена
-            except Exception as e:
-                messagebox.showerror(translations[self.current_language]['error'],
-                                     translations[self.current_language]['authentication_error'].format(error=e))
-                self.destroy()
+        # Создаем экземпляр DetectorAPI
+        self.detector = DetectorAPI(self.model_path)
+
+    def test_process_frame(self):
+        # Создаем моковый результат модели
+        mock_results = MagicMock()
+        mock_boxes = MagicMock()
+        mock_boxes.xyxy.cpu.return_value.numpy.return_value = np.array([[10, 20, 30, 40]])
+        mock_boxes.conf.cpu.return_value.numpy.return_value = np.array([0.9])
+        mock_boxes.cls.cpu.return_value.numpy.return_value = np.array([0])
+        mock_results[0].boxes = mock_boxes
+
+        self.mock_model.return_value = mock_results
+
+        # Создаем моковое изображение
+        mock_image = np.zeros((100, 200, 3))
+
+        # Вызов метода processFrame
+        boxes_list, scores, classes, num_boxes = self.detector.processFrame(mock_image)
+
+        # Проверка результатов
+        self.assertEqual(boxes_list, [(20, 10, 40, 30)])
+        self.assertEqual(scores, [0.9])
+        self.assertEqual(classes, [0])
+        self.assertEqual(num_boxes, 1)
+
+        # Проверка вызовов
+        self.mock_model.assert_called_once_with(mock_image)
+        mock_boxes.xyxy.cpu.assert_called_once()
+        mock_boxes.conf.cpu.assert_called_once()
+        mock_boxes.cls.cpu.assert_called_once()
+
+    def tearDown(self):
+        # Закрытие ресурсов
+        self.detector.close()
+
+class TestAuthPage(unittest.TestCase):
+    """
+    Тесты для класса AuthPage из pages.auth_page.
+    Тестирует успешный и неуспешный логин, переключение видимости пароля и смену языка.
+    """
+    def setUp(self):
+        self.root = tk.Tk()
+        self.app = MagicMock()
+        self.auth_page = AuthPage(self.root)
+        self.auth_page.create_widgets()
+
+    @patch('pages.auth_page.connect_db')
+    def test_login_success(self, mock_connect_db):
+        # Настройка моков базы данных
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_connect_db.return_value = mock_conn
+        mock_conn.cursor.return_value = mock_cursor
+        hashed_password = bcrypt.hashpw('password'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        mock_cursor.fetchone.return_value = (1, hashed_password)
+
+        # Устанавливаем значения полей ввода
+        self.auth_page.entry_email.insert(0, 'test@example.com')
+        self.auth_page.entry_password.insert(0, 'password')
+
+        # Вызов метода login
+        self.auth_page.login()
+
+        # Проверка успешной аутентификации
+        self.assertTrue(self.auth_page.is_authenticated)
+        self.assertEqual(self.auth_page.user_id, 1)
+
+    @patch('pages.auth_page.connect_db')
+    def test_login_failure_invalid_password(self, mock_connect_db):
+        # Настройка моков базы данных
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_connect_db.return_value = mock_conn
+        mock_conn.cursor.return_value = mock_cursor
+        hashed_password = bcrypt.hashpw('wrongpassword'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        mock_cursor.fetchone.return_value = (1, hashed_password)
+
+        # Устанавливаем значения полей ввода
+        self.auth_page.entry_email.insert(0, 'test@example.com')
+        self.auth_page.entry_password.insert(0, 'password')
+
+        # Вызов метода login
+        self.auth_page.login()
+
+        # Проверка, что аутентификация не удалась
+        self.assertFalse(self.auth_page.is_authenticated)
+
+    def test_toggle_password_visibility(self):
+        # Проверка начального состояния (пароль скрыт)
+        self.assertEqual(self.auth_page.entry_password.cget('show'), '*')
+
+        # Переключаем видимость пароля
+        self.auth_page.show_password_var.set(True)
+        self.auth_page.toggle_password_visibility()
+
+        # Проверка, что пароль отображается
+        self.assertEqual(self.auth_page.entry_password.cget('show'), '')
+
+        # Переключаем обратно видимость пароля
+        self.auth_page.show_password_var.set(False)
+        self.auth_page.toggle_password_visibility()
+
+        # Проверка, что пароль скрыт
+        self.assertEqual(self.auth_page.entry_password.cget('show'), '*')
+
+    def test_change_language(self):
+        # Проверка начального языка
+        self.assertEqual(self.auth_page.current_language, 'ru')
+
+        # Смена языка на английский
+        self.auth_page.change_language('English')
+
+        # Проверка, что язык изменился
+        self.assertEqual(self.auth_page.current_language, 'en')
+        self.assertEqual(self.auth_page.label_email.cget('text'), translations['en']['Email'])
+
+    def tearDown(self):
+        self.root.destroy()
+
+class TestRegisterPage(unittest.TestCase):
+    """
+    Тесты для класса RegisterPage из pages.register.
+    Тестирует успешную регистрацию, валидацию пароля и смену языка.
+    """
+    def setUp(self):
+        self.root = tk.Tk()
+        self.app = MagicMock()
+        self.register_page = RegisterPage(self.root)
+        self.register_page.create_widgets()
+
+    @patch('pages.register.connect_db')  # Обновите путь для мока connect_db
+    def test_register_success(self, mock_connect_db):
+        # Настройка моков базы данных
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_connect_db.return_value = mock_conn
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.fetchone.return_value = (False,)  # Email не существует
+
+        # Устанавливаем значения полей ввода
+        self.register_page.entry_username.insert(0, 'testuser')
+        self.register_page.entry_email.insert(0, 'test@example.com')
+        self.register_page.entry_password.insert(0, 'Password123!')
+        self.register_page.entry_confirm_password.insert(0, 'Password123!')
+
+        # Вызов метода register
+        with patch('tkinter.messagebox.showinfo') as mock_showinfo:
+            self.register_page.register()
+            mock_showinfo.assert_called_once_with(translations['ru']['success'], translations['ru']['Registration_completed'])
+
+        # Проверка успешной регистрации
+        self.assertTrue(self.register_page.is_valid_email('test@example.com'))
+        self.assertTrue(self.register_page.is_unique_email('test@example.com', mock_conn))
+        self.assertTrue(self.register_page.validate_password('Password123!')[0])
+
+    def test_validate_password(self):
+        # Проверка различных вариантов паролей
+        valid_password = 'Password123!'
+        short_password = 'Pass12!'
+        no_uppercase = 'password123!'
+        no_lowercase = 'PASSWORD123!'
+        no_digit = 'Password!'
+        no_special = 'Password123'
+
+        self.assertTrue(self.register_page.validate_password(valid_password)[0])
+        self.assertFalse(self.register_page.validate_password(short_password)[0])
+        self.assertFalse(self.register_page.validate_password(no_uppercase)[0])
+        self.assertFalse(self.register_page.validate_password(no_lowercase)[0])
+        self.assertFalse(self.register_page.validate_password(no_digit)[0])
+        self.assertFalse(self.register_page.validate_password(no_special)[0])
+
+    def test_change_language(self):
+        # Проверка начального языка
+        self.assertEqual(self.register_page.current_language, 'ru')
+
+        # Смена языка на английский
+        self.register_page.current_language = 'en'
+        self.register_page.update_language()
+
+        # Проверка, что язык изменился
+        self.assertEqual(self.register_page.current_language, 'en')
+        self.assertEqual(self.register_page.label_email.cget('text'), translations['en']['Email'])
+
+    def tearDown(self):
+        self.root.destroy()
+
+class TestHomePage(unittest.TestCase):
+    """
+    Тесты для класса HomePage из pages.home_page.
+    Тестирует отображение последних графиков и их наличие.
+    """
+    def setUp(self):
+        self.root = tk.Tk()
+        self.app = MagicMock()
+        self.app.current_language = 'ru'
+        self.home_page = HomePage(self.root, self.app, user_id=123)
+
+    @patch('pages.home_page.connect_db')  # Обновите путь для мока connect_db
+    def test_display_latest_graphs_no_graphs(self, mock_connect_db):
+        # Настройка моков базы данных
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_connect_db.return_value = mock_conn
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.fetchall.return_value = []
+
+        frame = tk.Frame(self.root)
+        self.home_page.display_latest_graphs(frame)
+
+        # Проверка наличия сообщения "No graphs found"
+        center_frame = frame.winfo_children()[0]
+        label = center_frame.winfo_children()[0]
+        self.assertEqual(label.cget('text'), translations[self.app.current_language]['no_graphs_found'])
+
+    def tearDown(self):
+        if self.root:
+            self.root.update()
+            self.root.destroy()
+
+class TestProfilePage(unittest.TestCase):
+    """
+    Тесты для класса ProfilePage из pages.profile_page.
+    Тестирует загрузку профиля пользователя и смену пароля.
+    """
+    def setUp(self):
+        self.root = tk.Tk()
+        self.profile_page = ProfilePage(self.root, user_id=123)
+
+    @patch('pages.profile_page.connect_db')  # Обновите путь для мока connect_db
+    def test_load_user_profile(self, mock_connect_db):
+        # Настройка моков базы данных
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_connect_db.return_value = mock_conn
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.fetchone.return_value = ('Test User', 'test@example.com', 'Admin', 'Images/icon.jpg')
+
+        self.profile_page.load_user_profile()
+
+        # Проверка результатов
+        self.assertEqual(self.profile_page.username, 'Test User')
+        self.assertEqual(self.profile_page.email, 'test@example.com')
+        self.assertEqual(self.profile_page.position, 'Admin')
+        self.assertEqual(self.profile_page.image_path, 'Images/icon.jpg')
+
+        # Вызовем display_user_info, чтобы обновить метки
+        self.profile_page.display_user_info()
+        self.profile_page.set_language('ru')  # Устанавливаем язык для отображения
+
+        # Проверка вызова метода отображения информации о пользователе
+        expected_username = f"{translations['ru']['username']}: Test User"
+        self.assertEqual(self.profile_page.label_username['text'], expected_username)
+        expected_email = f"{translations['ru']['email']}: test@example.com"
+        self.assertEqual(self.profile_page.label_email['text'], expected_email)
+        expected_position = f"{translations['ru']['position']}: Admin"
+        self.assertEqual(self.profile_page.label_position['text'], expected_position)
+
+    @patch('pages.profile_page.connect_db')  # Обновите путь для мока connect_db
+    @patch('pages.profile_page.simpledialog.askstring')  # Обновите путь для мока simpledialog.askstring
+    @patch('pages.profile_page.messagebox.showinfo')  # Обновите путь для мока messagebox.showinfo
+    def test_change_password(self, mock_showinfo, mock_askstring, mock_connect_db):
+        # Настройка моков базы данных
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_connect_db.return_value = mock_conn
+        mock_conn.cursor.return_value = mock_cursor
+
+        new_password = 'NewPassword123!'
+        confirm_password = 'NewPassword123!'
+        mock_askstring.side_effect = [new_password, confirm_password]
+
+        self.profile_page.change_password()
+
+        # Проверка, что метод execute был вызван
+        self.assertTrue(mock_cursor.execute.called)
+        args, kwargs = mock_cursor.execute.call_args
+        self.assertEqual(args[0], "UPDATE users SET password = %s WHERE user_id = %s")
+        self.assertEqual(args[1][1], self.profile_page.user_id)
+
+        # Проверка, что сообщение о успешной смене пароля было показано
+        mock_showinfo.assert_called_with(translations[self.profile_page.current_language]['success'], translations[self.profile_page.current_language]['password_successfully_changed'])
+
+    def tearDown(self):
+        if self.root:
+            self.root.update()
+            self.root.destroy()
+
+class TestDataPage(unittest.TestCase):
+    """
+    Тесты для класса DataPage из pages.data_page.
+    Тестирует получение и отображение данных, а также генерацию кнопок для доступных аудиторий.
+    """
+    def setUp(self):
+        self.root = tk.Tk()
+        self.app = MagicMock()
+        self.app.current_language = 'ru'
+        self.data_page = DataPage(self.root, self.app, user_id=15)
+
+    @patch('pages.data_page.connect_db')  # Обновите путь для мока connect_db
+    def test_fetch_and_display_data(self, mock_connect_db):
+        # Настройка моков базы данных
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_connect_db.return_value = mock_conn
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.fetchone.side_effect = [(None,), ('2023-01-01 12:00:00',)]
+        mock_cursor.fetchall.return_value = [('2023-01-01 12:00:00', 10), ('2023-01-02 12:00:00', 20)]
+
+        self.data_page.show_class_data(1)
+
+        # Проверка получения данных и обновления текстового виджета
+        self.data_page.fetch_and_display_data(1)
+        expected_text = f"{translations['ru']['last_10_detections'].format(class_id=1)}\n\n"
+        expected_text += f"{translations['ru']['Datae']}: 2023-01-01 12:00:00, {translations['ru']['Caounte']}: 10\n"
+        expected_text += f"{translations['ru']['Datae']}: 2023-01-02 12:00:00, {translations['ru']['Caounte']}: 20\n"
+
+        self.assertEqual(self.data_page.data_text.get("1.0", tk.END).strip(), expected_text.strip())
+
+    @patch('pages.data_page.connect_db')  # Обновите путь для мока connect_db
+    def test_generate_buttons(self, mock_connect_db):
+        # Настройка моков базы данных
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_connect_db.return_value = mock_conn
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.fetchall.return_value = [(1,), (2,), (3,)]
+
+        self.data_page.generate_buttons()
+
+        # Проверка, что кнопки были созданы и отображены
+        self.assertEqual(len(self.data_page.buttons), 3)
+        self.assertIn(1, self.data_page.buttons)
+        self.assertIn(2, self.data_page.buttons)
+        self.assertIn(3, self.data_page.buttons)
+
+    def tearDown(self):
+        if self.root:
+            self.root.update()
+            self.root.destroy()
+
+class TestCameraPage(unittest.TestCase):
+    """
+    Тесты для класса CameraPage из pages.camera_page.
+    Тестирует получение идентификатора должности пользователя, получение доступных видеофайлов и их отображение.
+    """
+    def setUp(self):
+        self.root = tk.Tk()
+        self.app = MagicMock()
+        self.app.current_language = 'en'  # Устанавливаем значение current_language
+        self.camera_page = CameraPage(self.root, self.app, user_id=15)
+
+    @patch('pages.camera_page.connect_db')
+    def test_get_user_position_id(self, mock_connect_db):
+        # Настройка mock для базы данных
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_connect_db.return_value = mock_conn
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.fetchone.return_value = (15,)
+
+        position_id = self.camera_page.get_user_position_id()
+
+        # Проверка, что был выполнен правильный запрос к базе данных
+        mock_cursor.execute.assert_called_once_with("SELECT position_id FROM users WHERE user_id = %s;", (15,))
+        self.assertEqual(position_id, 15)
+
+    @patch('pages.camera_page.connect_db')
+    def test_get_video_files_for_user(self, mock_connect_db):
+        # Настройка mock для базы данных
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_connect_db.return_value = mock_conn
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.fetchone.return_value = (15,)
+        mock_cursor.fetchall.return_value = [(1, 'video1.mp4'), (2, 'video2.mp4')]
+
+        video_files = self.camera_page.get_video_files_for_user()
+
+        # Проверка, что были выполнены правильные запросы к базе данных
+        self.assertEqual(mock_cursor.execute.call_count, 2)
+        mock_cursor.execute.assert_any_call("SELECT position_id FROM users WHERE user_id = %s;", (15,))
+        mock_cursor.execute.assert_any_call("""
+                SELECT c.id, c.path
+                FROM cameras c
+                JOIN camera_permissions cp ON c.id = cp.camera_id
+                WHERE cp.position_id = %s;
+                """, (15,))
+        self.assertEqual(video_files, {1: 'video1.mp4', 2: 'video2.mp4'})
+
+    def tearDown(self):
+        self.root.destroy()
+class TestSettingsPage(unittest.TestCase):
+    """
+    Тесты для класса SettingsPage из pages.settings_page.
+    Тестирует открытие справочного документа, смену языка и безопасный выход.
+    """
+    def setUp(self):
+        self.root = tk.Tk()
+        self.app = MagicMock()
+        self.app.current_language = 'ru'
+        self.settings_page = SettingsPage(self.root, self.app, user_id=123)
+
+    @patch('pages.settings_page.webbrowser.open')
+    @patch('pages.settings_page.os.path.exists')
+    def test_open_help_document(self, mock_exists, mock_open):
+        # Настройка моков
+        mock_exists.return_value = True
+
+        # Вызов тестируемого метода
+        self.settings_page.open_help_document()
+
+        # Проверка вызовов
+        help_path = os.path.join('Helps', 'Diplom.pdf')
+        mock_exists.assert_called_once_with(help_path)
+        mock_open.assert_called_once_with(help_path)
+
+    @patch('pages.settings_page.webbrowser.open')
+    @patch('pages.settings_page.os.path.exists')
+    def test_open_help_document_file_not_found(self, mock_exists, mock_open):
+        # Настройка моков
+        mock_exists.return_value = False
+
+        with patch('tkinter.messagebox.showerror') as mock_showerror:
+            self.settings_page.open_help_document()
+            # Проверка вызовов
+            help_path = os.path.join('Helps', 'Diplom.pdf')
+            mock_exists.assert_called_once_with(help_path)
+            mock_open.assert_not_called()
+            mock_showerror.assert_called_once()
+
+    def test_set_language(self):
+        new_language = 'en'
+        self.settings_page.set_language(new_language)
+        self.assertEqual(self.settings_page.current_language, new_language)
+        self.assertEqual(self.settings_page.theme_button.cget('text'), translations[new_language]['change_theme'])
+        self.assertEqual(self.settings_page.help_button.cget('text'), translations[new_language]['help'])
+        self.assertEqual(self.settings_page.language_label.cget('text'), translations[new_language]['select_language'])
+        self.assertEqual(self.settings_page.exit_button.cget('text'), translations[new_language]['exit'])
+
+    @patch('tkinter.messagebox.askokcancel', return_value=True)
+    def test_safe_exit(self, mock_askokcancel):
+        # Вызов тестируемого метода
+        self.settings_page.safe_exit()
+
+        # Проверка вызовов
+        mock_askokcancel.assert_called_once_with(
+            translations[self.settings_page.current_language]['exit_confirmation_title'],
+            translations[self.settings_page.current_language]['confirm_exit']
+        )
+        self.app.logout.assert_called_once()
+
+    def tearDown(self):
+        self.root.destroy()
+
+class TestUtils(unittest.TestCase):
+    """
+    Тесты для утилитных функций из Helps.utils.
+    Тестирует подключение к базе данных, вставку данных, хеширование и проверку пароля.
+    """
+    @patch('psycopg2.connect')
+    def test_connect_db_success(self, mock_connect):
+        mock_connect.return_value = MagicMock()
+        conn = connect_db()
+        self.assertIsNotNone(conn)
+        mock_connect.assert_called_once()
+
+    @patch('psycopg2.connect')
+    def test_connect_db_failure(self, mock_connect):
+        mock_connect.side_effect = psycopg2.OperationalError
+        conn = connect_db()
+        self.assertIsNone(conn)
+        mock_connect.assert_called_once()
+
+    @patch('Helps.utils.connect_db')
+    @patch('Helps.utils.datetime')
+    def test_insert_data_success(self, mock_datetime, mock_connect_db):
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_connect_db.return_value = mock_conn
+        mock_conn.cursor.return_value = mock_cursor
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 0, 0, 0)
+
+        insert_data(10, 1, 1, datetime(2024, 1, 1, 0, 0, 0))
+
+        mock_connect_db.assert_called_once()
+        mock_cursor.execute.assert_called_once_with(
+            "INSERT INTO occupancy (detection_date, people_count, class_id, user_id, session_start) VALUES (%s, %s, %s, %s, %s)",
+            (datetime(2024, 1, 1, 0, 0, 0), 10, 1, 1, datetime(2024, 1, 1, 0, 0, 0))
+        )
+        mock_conn.commit.assert_called_once()
+        mock_cursor.close.assert_called_once()
+        mock_conn.close.assert_called_once()
+
+    @patch('Helps.utils.connect_db')
+    @patch('Helps.utils.datetime')
+    def test_insert_data_failure(self, mock_datetime, mock_connect_db):
+        mock_connect_db.return_value = None
+        mock_datetime.now.return_value = datetime(2024, 1, 1, 0, 0, 0)
+
+        with self.assertRaises(Exception):
+            insert_data(10, 1, 1, datetime(2024, 1, 1, 0, 0, 0))
+
+        mock_connect_db.assert_called_once()
+
+    def test_hash_password(self):
+        password = 'password123'
+        hashed = hash_password(password)
+        self.assertTrue(bcrypt.checkpw(password.encode(), hashed))
+
+    def test_check_password(self):
+        password = 'password123'
+        hashed = hash_password(password)
+        self.assertTrue(check_password(hashed, password))
+        self.assertFalse(check_password(hashed, 'wrongpassword'))
 
 
-    def create_widgets(self):
-        # Создание элементов интерфейса
-        self.app_bar = tk.Frame(self, height=56, bg="#1976D2")
-        self.app_bar.pack(side="top", fill="x")
-
-        # Загрузка и масштабирование иконки
-        icon_image = Image.open("Images/eyeee.png")  # Укажите путь к файлу иконки
-        # Расчет новой ширины для сохранения пропорций
-        base_height = 40  # Высота иконки меньше высоты app_bar для визуальной симметрии
-        img_ratio = icon_image.width / icon_image.height
-        new_width = int(base_height * img_ratio)
-        icon_image = icon_image.resize((new_width, base_height), Image.LANCZOS)
-        icon_photo = ImageTk.PhotoImage(icon_image)
-
-        # Кнопки навигации с иконкой
-        self.home_button = tk.Button(self.app_bar, image=icon_photo, bg="#1976D2", relief="flat",
-                                     command=self.show_home)
-        self.home_button.image = icon_photo  # Сохраняем ссылку на изображение
-        self.home_button.pack(side="left", padx=(10, 0))
-
-        self.profile_button = tk.Button(self.app_bar, text=self.translations[self.current_language]['profile'],
-                                        bg="#1976D2", fg="white", relief="flat", command=self.show_profile)
-        self.profile_button.pack(side="right", padx=(0, 10))
-
-        self.exit_button = tk.Button(self.app_bar, text=self.translations[self.current_language]['exit'], bg="#1976D2",
-                                     fg="white", relief="flat", command=self.confirm_exit)
-        self.exit_button.pack(side="right")
-
-        # Панели для навигации и контента
-        self.nav_frame = tk.Frame(self, bg="#ffffff", width=200)
-        self.nav_frame.pack(side="left", fill="y")
-
-        self.body_frame = tk.Frame(self, bg="#ffffff", width=600)
-        self.body_frame.pack(side="right", fill="both", expand=True)
-
-        # Создание кнопок навигации и ассоциированных страниц
-        self.navigation_buttons = []
-        self.pages = [HomePage, DataPage, CameraPage, SettingsPage]
-        destinations = [self.translations[self.current_language]['home'], self.translations[self.current_language]['data'], self.translations[self.current_language]['camera'], self.translations[self.current_language]['settings']]
-        for i, destination in enumerate(destinations):
-            button = tk.Button(self.nav_frame, text=destination, bg="#1976D2", fg="white", font=("Arial", 12), relief="flat", command=lambda i=i: self.on_navigation_selected(i))
-            button.pack(anchor="w", pady=(5, 0), padx=10, fill="x")
-            self.navigation_buttons.append(button)
-
-        self.separator_line = tk.Frame(self, width=2, bg="#1976D2")
-        self.separator_line.pack(side="left", fill="y")
-
-        self.update_body_content()
-
-    def update_body_content(self):
-        # Очистка и обновление содержимого главного фрейма
-        for widget in self.body_frame.winfo_children():
-            widget.destroy()
-
-        if self.selected_index == -1:
-            try:
-                page = ProfilePage(self.body_frame, self.user_id)  # Передача user_id
-                page.set_language(self.current_language)  # Установка языка для текущей страницы
-                page.pack(fill="both", expand=True)
-
-                # Применяем текущую тему к новой странице
-                self.apply_theme_to_all_for_child(page, self.current_theme_bg, self.current_theme_fg)
-            except Exception as e:
-                messagebox.showerror(translations[self.current_language]['error'], translations[self.current_language]['profile_creation_error'].format(error=e))
-        else:
-            try:
-                page = self.pages[self.selected_index](self.body_frame, self, self.user_id)
-                page.set_language(self.current_language)  # Установка языка для текущей страницы
-                page.pack(fill="both", expand=True)
-
-                # Применяем текущую тему к новой странице
-                self.apply_theme_to_all_for_child(page, self.current_theme_bg, self.current_theme_fg)
-            except Exception as e:
-                messagebox.showerror(translations[self.current_language]['error'], translations[self.current_language]['page_creation_error'].format(error=e))
-
-    def apply_theme_to_all(self, bg, fg):
-        self.current_theme_bg = bg  # сохраняем текущие цвета темы
-        self.current_theme_fg = fg
-        self.apply_theme_to_all_for_child(self, bg, fg)  # применяем тему ко всему приложению
-
-    def apply_theme_to_all_for_child(self, widget, bg, fg):
-        try:
-            widget.configure(bg=bg)
-            if hasattr(widget, 'configure') and 'fg' in widget.keys():
-                widget.configure(fg=fg)
-        except tk.TclError:
-            pass
-        for child in widget.winfo_children():
-            self.apply_theme_to_all_for_child(child, bg, fg)
-
-    # Дополнительные функции для управления полноэкранным режимом (при желании):
-    def toggle_fullscreen(self, event=None):
-        self.full_screen = not self.full_screen
-        self.attributes('-fullscreen', self.full_screen)
-        return "break"
-
-    def end_fullscreen(self, event=None):
-        self.full_screen = False
-        self.attributes('-fullscreen', False)
-        return "break"
-
-    def logout(self):
-        """Очищает сессию и перезапускает приложение для новой аутентификации."""
-        self.is_authenticated = False
-        self.save_session()  # Обновляем сессию в базе данных перед выходом
-        self.restart()
-
-    def restart(self):
-        """Перезапускает интерфейс пользователя, начиная с окна авторизации."""
-        self.destroy()  # Закрываем текущее окно
-        self.__init__()  # Пересоздаём окно приложения
-
-    def show_home(self):
-        # Переход на главную страницу
-        self.selected_index = 0
-        self.update_body_content()
-
-    def show_profile(self):
-        # Переход на страницу профиля
-        self.selected_index = -1  # Специальный индекс для страницы профиля
-        self.update_body_content()
-
-    def confirm_exit(self):
-        # Запрашиваем подтверждение выхода
-        if messagebox.askokcancel(translations[self.current_language]['exit'], translations[self.current_language]['confirm_exit']):
-            # Если пользователь подтвердил выход, перекидываем на окно авторизации
-            self.save_session()  # Save session before exiting
-            self.destroy()
-
-    def on_navigation_selected(self, index):
-        # Обработка выбора элемента навигации
-        self.selected_index = index
-        self.update_body_content()
-
-    def on_close(self):
-        """Обработчик закрытия окна."""
-        self.save_session()  # Сохранение сеанса перед закрытием
-        self.destroy()  # Закрытие приложения
-
-if __name__ == "__main__":
-    app = Page()
-    app.mainloop()
-
+if __name__ == '__main__':
+    unittest.main()

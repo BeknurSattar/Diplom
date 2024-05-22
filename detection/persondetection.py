@@ -1,11 +1,9 @@
-import numpy as np
 import time
-import os
 from ultralytics import YOLO
 
 class DetectorAPI:
     def __init__(self, model_path):
-        # Загрузка модели YOLOv8
+        # Загрузка модели
         self.model = YOLO(model_path)
 
     def processFrame(self, image):

@@ -2,9 +2,9 @@ import tkinter as tk
 from tkinter import messagebox
 import psycopg2
 import bcrypt
-
 from Helps.translations import translations
 from Helps.utils import connect_db  # Подключение функции соединения с базой данных
+
 class AuthPage(tk.Toplevel):
     def __init__(self, parent):
         super().__init__(parent)

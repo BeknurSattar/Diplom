@@ -1,10 +1,8 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
-
 import bcrypt
 import psycopg2
 from PIL import Image, ImageTk, ImageOps, ImageDraw
-
 from Helps.translations import translations
 from Helps.utils import connect_db
 

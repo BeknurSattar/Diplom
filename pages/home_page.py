@@ -5,6 +5,7 @@ from PIL import Image, ImageTk
 import psycopg2
 from Helps.utils import connect_db
 from Helps.translations import translations
+
 class HomePage(tk.Frame):
     # Конструктор класса HomePage
     def __init__(self, parent, app, user_id=None, *args, **kwargs):

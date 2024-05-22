@@ -4,7 +4,7 @@ from tkinter import messagebox
 import psycopg2
 import bcrypt
 from Helps.translations import translations
-from Helps.utils import connect_db  # Убедитесь, что функция connect_db правильно импортирована
+from Helps.utils import connect_db
 
 class RegisterPage(tk.Toplevel):
     def __init__(self, parent, language='ru'):

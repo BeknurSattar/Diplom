@@ -1,9 +1,5 @@
-import cv2
 import psycopg2
-from datetime import datetime
-import threading
 import bcrypt
-
 
 
 # Функция подключения к базе данных
@@ -41,30 +37,10 @@ def insert_data(people_count, class_id, user_id, session_start):
         print("Данные успешно вставлены.")
     except Exception as error:
         print("Ошибка вставки данных: ", error)
+        raise
     finally:
         if conn is not None:
             conn.close()
-# Установка периодического вставления данных
-def start_periodic_data_insert(person, class_id, interval=5000):
-    """Запускает периодическое вставление данных в базу данных."""
-    global data_insert_timer
-
-    # Останавливаем предыдущий таймер, если он существует
-    if data_insert_timer is not None:
-        data_insert_timer.cancel()
-
-    # Вставляем данные
-    insert_data(person, class_id)
-
-    # Запускаем таймер снова
-    data_insert_timer = threading.Timer(interval / 1000.0, start_periodic_data_insert, args=(person, class_id, interval))
-    data_insert_timer.start()
-
-def stop_periodic_data_insert():
-    global data_insert_timer
-    if data_insert_timer is not None:
-        data_insert_timer.cancel()
-        data_insert_timer = None
 
 def hash_password(password):
     # Генерируем соль для хеширования
@@ -76,8 +52,3 @@ def hash_password(password):
 def check_password(hashed_password, user_password):
     # Проверяем, совпадает ли введенный пароль с хешированным
     return bcrypt.checkpw(user_password.encode(), hashed_password)
-
-
-
-
-

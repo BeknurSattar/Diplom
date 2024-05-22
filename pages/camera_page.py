@@ -1,4 +1,3 @@
-import queue
 import time
 import tkinter as tk
 from tkinter import messagebox
@@ -11,8 +10,7 @@ from Helps.utils import *
 import cv2
 from detection.persondetection import DetectorAPI
 from concurrent.futures import ThreadPoolExecutor
-import asyncio
-import concurrent.futures
+
 
 class CameraPage(tk.Frame):
     """Страница управления видеокамерами и обработкой видео потоков."""
@@ -30,7 +28,6 @@ class CameraPage(tk.Frame):
         model_path = os.path.abspath('runs/detect/train2/weights/best.pt')
         model_path1 = os.path.abspath('yolov8m.pt')
         self.odapi = DetectorAPI(model_path=model_path)  # Подключение API для обнаружения объектов в видео
-        self.queue = queue.Queue()
         self.executor = ThreadPoolExecutor(max_workers=4)  # Максимальное количество потоков
 
         self.threads = []
@@ -280,7 +277,7 @@ class CameraPage(tk.Frame):
                 processing_speed_data.append(fps)
 
                 # Проверяем, нужно ли сохранять данные
-                if (time.time() - last_save_time) >= 5:
+                if (time.time() - last_save_time) >= 120:
                     detected_people = int(num)
                     insert_data(detected_people, index, self.user_id, session_start)
                     last_save_time = time.time()
@@ -406,7 +403,6 @@ class CameraPage(tk.Frame):
     def remove_video(self, video_label, cap, box):
         """Удаление видео из интерфейса и остановка анализа видео."""
         cap.release()
-        stop_periodic_data_insert()
         video_label.destroy()
         for widget in box.winfo_children():
             widget.destroy()

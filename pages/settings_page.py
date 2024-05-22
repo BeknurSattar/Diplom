@@ -2,7 +2,6 @@ import os
 import tkinter as tk
 from tkinter import ttk, messagebox
 import webbrowser  # Добавляем импорт модуля webbrowser
-from .auth_page import AuthPage
 from Helps.translations import translations
 class SettingsPage(tk.Frame):
     def __init__(self, parent, app, user_id=None):
@@ -53,13 +52,12 @@ class SettingsPage(tk.Frame):
             self.apply_theme_to_all(child, bg, fg)  # Рекурсивно применить тему ко всем дочерним элементам
 
     def open_help_document(self):
-        # Путь к файлу теперь формируется через os.path.join для корректной работы на разных ОС
         help_path = os.path.join('Helps', 'Diplom.pdf')
         if os.path.exists(help_path):
             webbrowser.open(help_path)
         else:
-            messagebox.showerror("Ошибка", "Файл не найден. Проверьте путь: " + help_path)
-            print("Файл не найден. Проверьте путь:", help_path)
+            messagebox.showerror(translations[self.current_language]['error'], f"Файл не найден. Проверьте путь: {help_path}")
+            print(f"Файл не найден. Проверьте путь: {help_path}")
 
     def change_language(self, language):
         self.set_language(language)
