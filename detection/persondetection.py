@@ -9,6 +9,8 @@ class DetectorAPI:
     def processFrame(self, image):
         # Преобразуем изображение в формат, ожидаемый моделью
         start_time = time.time()
+        # Перемещение модели и данных на CPU
+        # self.model.to('cpu')
         results = self.model(image)
         end_time = time.time()
 

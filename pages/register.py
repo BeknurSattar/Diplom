@@ -10,7 +10,7 @@ class RegisterPage(tk.Toplevel):
     def __init__(self, parent, language='ru'):
         super().__init__(parent)
         self.title()
-        self.geometry("300x600")
+        self.geometry("300x550")
         self.resizable(False, False)
         self.configure(bg="#f0f0f0")
         self.parent = parent

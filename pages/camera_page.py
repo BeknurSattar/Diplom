@@ -1,16 +1,17 @@
 import time
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, filedialog
 from Helps.translations import translations
 from PIL import Image, ImageTk
 import os
+import requests
 from matplotlib import pyplot as plt
 import datetime
 from Helps.utils import *
 import cv2
 from detection.persondetection import DetectorAPI
 from concurrent.futures import ThreadPoolExecutor
-
+#-------------------------------------------------------------------------------------
 
 class CameraPage(tk.Frame):
     """Страница управления видеокамерами и обработкой видео потоков."""
@@ -282,7 +283,7 @@ class CameraPage(tk.Frame):
                     insert_data(detected_people, index, self.user_id, session_start)
                     last_save_time = time.time()
                 # Повторение обработки через заданный интервал
-                video_label.after(60, analyze_and_update)
+                video_label.after(30, analyze_and_update)
             else:
                 # Создаем графики и сохраняем их
                 # Видео закончилось, активируем кнопку сохранения графиков
@@ -316,8 +317,6 @@ class CameraPage(tk.Frame):
             """Обновление видео в полноэкранном режиме."""
             ret, frame = cap.read()
             if ret:
-                frame_height, frame_width, _ = frame.shape
-
                 imgtk = self.create_video_image(frame, video_width, video_height)
                 full_video_label.configure(image=imgtk)
                 full_video_label.imgtk = imgtk
@@ -326,7 +325,7 @@ class CameraPage(tk.Frame):
                 cap.release()
                 top_level.destroy()
 
-        update_fullscreen_video()
+        self.executor.submit(update_fullscreen_video)
 
     def calculate_video_dimensions(self, aspect_ratio, box_width, box_height):
         """Расчет оптимальных размеров видео для отображения."""
