@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import scrolledtext, messagebox
 import os
+import requests
 from fpdf import FPDF
 from docx import Document
 from docx.oxml import OxmlElement
@@ -11,6 +12,8 @@ from Helps.translations import translations
 from Helps.utils import *
 from datetime import datetime
 from PIL import Image, ImageTk
+
+SERVER_URL = "http://127.0.0.1:5000"
 
 class DataPage(tk.Frame):
     def __init__(self, parent, app, user_id=None):
@@ -93,89 +96,52 @@ class DataPage(tk.Frame):
     def fetch_and_display_data(self, class_id):
         """Получение и отображение данных о последних 10 детекциях и данных последнего обработанного видео."""
         try:
-            self.conn = connect_db()
-            cur = self.conn.cursor()
-
-            # Получение времени начала последней сессии
-            cur.execute(
-                "SELECT MAX(session_start) FROM occupancy WHERE class_id = %s AND user_id = %s;",
-                (class_id, self.user_id))
-            last_session_start = cur.fetchone()[0]
-
-            # Запрос данных о последних 10 детекциях по class_id
-            cur.execute(
-                "SELECT detection_date, people_count FROM occupancy WHERE class_id = %s AND user_id = %s AND session_start = %s",
-                (class_id, self.user_id, last_session_start))
-            rows = cur.fetchall()
-
-            display_text = f"{translations[self.app.current_language]['last_10_detections'].format(class_id=class_id)}\n\n"
-            for row in rows:
-                display_text += f"{translations[self.app.current_language]['Datae']}: {row[0]}, {translations[self.app.current_language]['Caounte']}: {row[1]}\n"
-            self.data_text.delete(1.0, tk.END)
-            self.data_text.insert(tk.END, display_text)
-            cur.close()
-        except psycopg2.Error as e:
+            response = requests.get(f"{SERVER_URL}/get_class_data",
+                                    params={"user_id": self.user_id, "class_id": class_id})
+            if response.status_code == 200:
+                rows = response.json()["data"]
+                display_text = f"{translations[self.app.current_language]['last_10_detections'].format(class_id=class_id)}\n\n"
+                for row in rows:
+                    detection_date = datetime.strptime(row['detection_date'], "%a, %d %b %Y %H:%M:%S GMT")
+                    formatted_date = detection_date.strftime("%Y-%m-%d %H:%M:%S")
+                    display_text += f"{translations[self.app.current_language]['Datae']}: {formatted_date}, {translations[self.app.current_language]['Caounte']}: {row['people_count']}\n"
+                self.data_text.delete(1.0, tk.END)
+                self.data_text.insert(tk.END, display_text)
+            else:
+                messagebox.showerror(translations[self.app.current_language]['database_error'],
+                                     translations[self.app.current_language]['fetch_data_error'].format(
+                                         error=response.json().get("error")))
+        except Exception as e:
             messagebox.showerror(translations[self.app.current_language]['database_error'],
                                  translations[self.app.current_language]['fetch_data_error'].format(error=e))
-        finally:
-            if self.conn:
-                self.conn.close()
 
     def display_graph(self, class_id, graph_number):
         """Отображение выбранного графика."""
-        img = self.load_graph_from_db(class_id, graph_number)
-        if img:
-            img = img.resize((500, 400), Image.LANCZOS)  # Адаптация размера изображения
-            imgtk = ImageTk.PhotoImage(image=img)
-
-            # Удаляем предыдущий виджет графика, если он существует
-            if hasattr(self, 'graph_label'):
-                self.graph_label.destroy()
-
-            # Создаем новый виджет графика
-            self.graph_label = tk.Label(self.content, image=imgtk)
-            self.graph_label.image = imgtk
-            self.graph_label.pack(pady=10)
-        else:
-            messagebox.showerror(translations[self.app.current_language]['error'], translations[self.app.current_language]['graph_not_found_error'])
-
-    def load_graph_from_db(self, class_id, graph_number):
-        """Загрузка графика из базы данных, соответствующего последнему обработанному видео."""
         try:
-            self.conn = connect_db()
-            cur = self.conn.cursor()
-            # Получаем время начала последней сессии для данного class_id
-            cur.execute("""
-                SELECT MAX(session_start) FROM graphs
-                WHERE class_id = %s AND graph_type_id = %s;
-            """, (class_id, graph_number))
-            last_session_start = cur.fetchone()[0]
+            response = requests.get(f"{SERVER_URL}/get_graph_path",
+                                    params={"user_id": self.user_id, "class_id": class_id,
+                                            "graph_number": graph_number})
+            if response.status_code == 200:
+                graph_path = response.json()["graph_path"]
+                img = Image.open(graph_path)
+                img = img.resize((500, 400), Image.LANCZOS)  # Адаптация размера изображения
+                imgtk = ImageTk.PhotoImage(image=img)
 
-            if last_session_start:
-                # Используем время последней сессии для фильтрации нужного графика
-                cur.execute("""
-                    SELECT graph_path FROM graphs
-                    WHERE class_id = %s AND graph_type_id = %s AND session_start = %s;
-                """, (class_id, graph_number, last_session_start))
-                graph_path = cur.fetchone()
-                if graph_path:
-                    img = Image.open(graph_path[0])
-                    return img
-                else:
-                    messagebox.showinfo(translations[self.current_language]['error'],
-                                        translations[self.app.current_language]['no_graph_saved'])
-                    return None
+                # Удаляем предыдущий виджет графика, если он существует
+                if hasattr(self, 'graph_label'):
+                    self.graph_label.destroy()
+
+                # Создаем новый виджет графика
+                self.graph_label = tk.Label(self.content, image=imgtk)
+                self.graph_label.image = imgtk
+                self.graph_label.pack(pady=10)
             else:
-                messagebox.showinfo(translations[self.current_language]['error'],
-                                    translations[self.app.current_language]['no_recent_sessions'])
-                return None
-
-        except psycopg2.Error as e:
-            messagebox.showerror(translations[self.current_language]['error'],
+                messagebox.showerror(translations[self.app.current_language]['error'],
+                                     translations[self.app.current_language]['graph_not_found_error'])
+        except Exception as e:
+            messagebox.showerror(translations[self.app.current_language]['error'],
                                  translations[self.app.current_language]['fetch_data_error'].format(error=e))
-        finally:
-            if self.conn:
-                self.conn.close()
+
 
     def save_report_to_pdf(self, class_id):
         """Сохранение отчета в PDF файл с поддержкой Unicode и таблицей с бордюрами."""
@@ -209,18 +175,28 @@ class DataPage(tk.Frame):
         data = self.fetch_data_for_ot4et(class_id)
         counter = 1
         for index, row in enumerate(data):
-            if index % 1000 == 0:  # Пропуск каждой тысячной записи
-                continue
-            if isinstance(row[0], datetime):  # Проверка, что дата действительно datetime объект
-                formatted_date = row[0].strftime('%Y-%m-%d %H:%M:%S')
-            else:
-                formatted_date = translations[self.current_language]['Unknown_Date']  # В случае если дата в неправильном формате
+            try:
+                detection_date = row.get('detection_date', '')
+                people_count = row.get('people_count', '')
 
-            pdf.cell(30, 10, txt=str(counter), border=1)
-            pdf.cell(85, 10, txt=formatted_date, border=1)
-            pdf.cell(85, 10, txt=str(row[1]), border=1)
-            pdf.ln(10)
-            counter += 1
+                if isinstance(detection_date, str):  # Проверка, является ли дата строкой
+                    try:
+                        detection_date = datetime.strptime(detection_date,
+                                                           '%a, %d %b %Y %H:%M:%S %Z')  # Используем формат даты, соответствующий данным от сервера
+                    except ValueError:
+                        detection_date = datetime.now()  # В случае неудачи используем текущую дату
+
+                formatted_date = detection_date.strftime('%Y-%m-%d %H:%M:%S')
+
+                pdf.cell(30, 10, txt=str(counter), border=1)
+                pdf.cell(85, 10, txt=formatted_date, border=1)
+                pdf.cell(85, 10, txt=str(people_count), border=1)
+                pdf.ln(10)
+                counter += 1
+            except Exception as e:
+                messagebox.showerror(translations[self.current_language]['error'],
+                                     translations[self.current_language]['fetch_data_error'].format(error=e))
+                return
 
         # Добавление графиков
         for i in range(1, 4):
@@ -260,12 +236,23 @@ class DataPage(tk.Frame):
 
         for index, record in enumerate(records):
             row_cells = table.add_row().cells
-            formatted_date = record[0].strftime("%Y-%m-%d %H:%M:%S")
+            detection_date = record.get('detection_date', '')
+            people_count = record.get('people_count', '')
+
+            if isinstance(detection_date, str):  # Проверка, является ли дата строкой
+                try:
+                    detection_date = datetime.strptime(detection_date,
+                                                       '%a, %d %b %Y %H:%M:%S %Z')  # Используем формат даты, соответствующий данным от сервера
+                except ValueError:
+                    detection_date = datetime.now()  # В случае неудачи используем текущую дату
+
+            formatted_date = detection_date.strftime("%Y-%m-%d %H:%M:%S")
             row_cells[0].text = str(index + 1)
             row_cells[1].text = formatted_date
-            row_cells[2].text = str(record[1])
+            row_cells[2].text = str(people_count)
             for cell in row_cells:
-                self.set_cell_border(cell, top={"sz": 12, "val": "single", "space": "0"}, bottom={"sz": 12, "val": "single"})
+                self.set_cell_border(cell, top={"sz": 12, "val": "single", "space": "0"},
+                                     bottom={"sz": 12, "val": "single"})
 
         for i in range(1, 4):
             graph_path = self.load_graph_path_from_db(class_id, i)
@@ -275,59 +262,43 @@ class DataPage(tk.Frame):
                 doc.add_picture(graph_path, width=Pt(400))
 
         doc.save(doc_file_path)
-        messagebox.showinfo(translations[self.current_language]['report_save'], f"{translations[self.current_language]['report_successfully_saved_to']}: {doc_file_path}")
+        messagebox.showinfo(translations[self.current_language]['report_save'],
+                            f"{translations[self.current_language]['report_successfully_saved_to']}: {doc_file_path}")
 
     def get_user_details(self, user_id):
         """Получение имени пользователя и перевода названия его должности по user_id."""
-        self.conn = connect_db()
-        cur = self.conn.cursor()
         try:
-            cur.execute("""
-                SELECT u.username, p.title
-                FROM users u
-                JOIN positions p ON u.position_id = p.id
-                WHERE u.user_id = %s
-            """, (user_id,))
-            result = cur.fetchone()
-
-            if result:
-                username = result[0]
-                # Получение переведенного названия должности из словаря
-                position_title = result[1]
-                translated_position = translations[self.current_language]['positions'].get(position_title,
-                                                                                           position_title)
+            response = requests.get(f"{SERVER_URL}/get_user_details", params={"user_id": user_id})
+            if response.status_code == 200:
+                user_info = response.json()
+                username = user_info["username"]
+                translated_position = translations[self.current_language]['positions'].get(user_info["position"],
+                                                                                           user_info["position"])
+                return username, translated_position
             else:
-                username = translations[self.current_language]['Unknown']
-                translated_position = translations[self.current_language]['Unknown']
-        finally:
-            cur.close()
-            self.conn.close()
-
-        return username, translated_position
+                return translations[self.current_language]['Unknown'], translations[self.current_language]['Unknown']
+        except Exception as e:
+            messagebox.showerror(translations[self.current_language]['database_error'],
+                                 translations[self.current_language]['fetch_data_error'].format(error=e))
+            return translations[self.current_language]['Unknown'], translations[self.current_language]['Unknown']
 
     def fetch_data_for_ot4et(self, class_id):
         """Запрос данных для отчета, начиная с последней обработанной видеосессии."""
-        self.conn = connect_db()
-        cur = self.conn.cursor()
         try:
-            # Определяем время начала последней сессии обработки
-            cur.execute(
-                "SELECT MAX(session_start) FROM occupancy WHERE class_id = %s AND user_id = %s;",
-                (class_id, self.user_id))
-            last_session_start = cur.fetchone()[0]
-
-            if last_session_start:
-                # Выбор данных после начала последней сессии
-                cur.execute(
-                    "SELECT detection_date, people_count FROM occupancy WHERE class_id = %s AND user_id = %s AND session_start = %s ORDER BY detection_date;",
-                    (class_id, self.user_id, last_session_start))
-                rows = cur.fetchall()
-                return rows
+            response = requests.get(f"{SERVER_URL}/get_class_data",
+                                    params={"user_id": self.user_id, "class_id": class_id})
+            if response.status_code == 200:
+                data = response.json()["data"]
+                # Преобразование строковой даты в объект datetime
+                for row in data:
+                    row['detection_date'] = datetime.strptime(row['detection_date'], "%a, %d %b %Y %H:%M:%S GMT")
+                return data
             else:
-                return []  # Если не найдена последняя сессия, возвращаем пустой список
-        finally:
-            cur.close()
-            self.conn.close()
+                return []  # Если не удалось получить данные, возвращаем пустой список
+        except Exception as e:
+            messagebox.showerror(translations[self.current_language]['database_error'],
+                                 translations[self.current_language]['fetch_data_error'].format(error=e))
+            return []
 
     def set_cell_border(self, cell, **kwargs):
         """
@@ -371,31 +342,17 @@ class DataPage(tk.Frame):
     def load_graph_path_from_db(self, class_id, graph_number):
         """Загрузка пути к графику из базы данных, соответствующего последнему обработанному видео."""
         try:
-            self.conn = connect_db()
-            cur = self.conn.cursor()
-            # Сначала найдем время начала последней сессии обработки для данного class_id и graph_type_id
-            cur.execute("""
-                SELECT MAX(session_start) FROM graphs
-                WHERE class_id = %s AND graph_type_id = %s AND user_id = %s;
-            """, (class_id, graph_number, self.user_id))
-            last_session_start = cur.fetchone()[0]
-
-            if last_session_start:
-                # Теперь получаем путь к графику из последней сессии обработки
-                cur.execute("""
-                    SELECT graph_path FROM graphs
-                    WHERE class_id = %s AND graph_type_id = %s AND session_start = %s AND user_id = %s;
-                """, (class_id, graph_number, last_session_start, self.user_id))
-                result = cur.fetchone()
-                return result[0] if result else None
+            response = requests.get(f"{SERVER_URL}/get_graph_path",
+                                    params={"user_id": self.user_id, "class_id": class_id,
+                                            "graph_number": graph_number})
+            if response.status_code == 200:
+                return response.json()["graph_path"]
             else:
                 return None
         except Exception as e:
             messagebox.showerror(translations[self.current_language]['error'],
-                                 translations[self.app.current_language]['connection_database_error'].format(error=e))
-        finally:
-            if self.conn:
-                self.conn.close()
+                                 translations[self.current_language]['fetch_data_error'].format(error=e))
+            return None
 
     def create_button(self, index):
         """Создание кнопки для аудитории и сохранение ссылки на неё."""
@@ -436,28 +393,19 @@ class DataPage(tk.Frame):
     def generate_buttons(self):
         """Генерация кнопок для аудиторий на основе доступных данных по должности пользователя."""
         try:
-            self.conn = connect_db()
-            cur = self.conn.cursor()
-            # Запрос, который возвращает class_id для аудиторий, доступных данной должности
-            cur.execute("""
-                SELECT DISTINCT o.class_id 
-                FROM occupancy o
-                JOIN camera_permissions cp ON o.class_id = cp.camera_id
-                WHERE cp.position_id = %s
-                ORDER BY o.class_id;
-            """, (self.get_user_position_id(),))
-            class_ids = cur.fetchall()
-            for class_id in class_ids:
-                button = self.create_button(class_id[0])
-                button.pack(anchor="w", pady=(5, 0), padx=10, fill="x")
-            cur.close()
-            self.conn.close()
-        except psycopg2.Error as e:
-            messagebox.showerror(translations[self.current_language]['error'],
-                                 translations[self.app.current_language]['connection_database_error'].format(error=e))
-        finally:
-            if self.conn:
-                self.conn.close()
+            response = requests.get(f"{SERVER_URL}/get_class_ids", params={"user_id": self.user_id})
+            if response.status_code == 200:
+                class_ids = response.json()["class_ids"]
+                for class_id in class_ids:
+                    button = self.create_button(class_id)
+                    button.pack(anchor="w", pady=(5, 0), padx=10, fill="x")
+            else:
+                messagebox.showerror(translations[self.current_language]['database_error'],
+                                     translations[self.current_language]['fetch_data_error'].format(
+                                         error=response.json().get("error")))
+        except Exception as e:
+            messagebox.showerror(translations[self.current_language]['database_error'],
+                                 translations[self.current_language]['fetch_data_error'].format(error=e))
 
     def back_to_menu(self):
         """Возвращение в меню."""

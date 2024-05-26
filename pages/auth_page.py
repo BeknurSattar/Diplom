@@ -2,8 +2,11 @@ import tkinter as tk
 from tkinter import messagebox
 import psycopg2
 import bcrypt
+import requests
 from Helps.translations import translations
 from Helps.utils import connect_db  # Подключение функции соединения с базой данных
+
+SERVER_URL = "http://127.0.0.1:5000"
 
 class AuthPage(tk.Toplevel):
     def __init__(self, parent):
@@ -58,7 +61,7 @@ class AuthPage(tk.Toplevel):
 
         # Кнопки для входа, регистрации и входа через Google
         button_style = {"font": ("Arial", 12), "bg": "#1976D2", "fg": "white", "relief": "flat"}
-        self.button_login = tk.Button(self, command=self.login, **button_style)
+        self.button_login = tk.Button(self, command=self.auth, **button_style)
         self.button_login.pack(pady=(5, 5))
 
         self.button_register = tk.Button(self, command=self.open_register_window, **button_style)
@@ -72,40 +75,26 @@ class AuthPage(tk.Toplevel):
         self.language_menu.pack(pady=(5, 5))
 
     # Вход в приложения
-    def login(self):
-        # Метод для обработки входа пользователя
+    def auth(self):
         email = self.entry_email.get()
         password = self.entry_password.get()
 
-        # Проверка заполненности полей ввода
         if not email or not password:
             messagebox.showerror(translations[self.current_language]['error'], translations[self.current_language]['Please_enter_email_and_password'])
             return
 
-        conn = connect_db()
-        if conn:
-            try:
-                cursor = conn.cursor()
-                cursor.execute("SELECT user_id, password FROM users WHERE email = %s", (email,))
-                user = cursor.fetchone()
-                cursor.close()
-                conn.close()
-
-                # Проверка наличия пользователя и корректности пароля
-                if user:
-                    user_id, hashed_password = user
-                    if bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8')):
-                        self.user_id = user_id
-                        self.is_authenticated = True
-                        self.destroy()
-                    else:
-                        messagebox.showerror(translations[self.current_language]['error'], translations[self.current_language]['lose_password'],)
-                else:
-                    messagebox.showerror(translations[self.current_language]['error'], translations[self.current_language]['no_polz'])
-            except psycopg2.Error as e:
-                messagebox.showerror(translations[self.current_language]['error'], translations[self.current_language]['please_again'])
-        else:
-            messagebox.showerror(translations[self.current_language]['database_error'], translations[self.current_language]['connection_error'])
+        try:
+            response = requests.post(f"{SERVER_URL}/login", json={"email": email, "password": password})
+            if response.status_code == 200:
+                data = response.json()
+                self.user_id = data.get('user_id')
+                self.is_authenticated = True
+                self.destroy()
+            else:
+                error_message = response.json().get('error', translations[self.current_language]['please_again'])
+                messagebox.showerror(translations[self.current_language]['error'], error_message)
+        except requests.RequestException as e:
+            messagebox.showerror(translations[self.current_language]['error'], str(e))
 
     # Открытие окна регистрации
     def open_register_window(self):

@@ -3,8 +3,11 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from PIL import Image, ImageTk
 import psycopg2
+import requests
 from Helps.utils import connect_db
 from Helps.translations import translations
+
+SERVER_URL = "http://127.0.0.1:5000"
 
 class HomePage(tk.Frame):
     # Конструктор класса HomePage
@@ -63,39 +66,40 @@ class HomePage(tk.Frame):
 
     def fetch_total_people(self):
         # Извлечение общего количества обнаруженных людей из базы данных
-        conn = connect_db()
-        if conn:
-            try:
-                with conn.cursor() as cur:
-                    cur.execute("SELECT SUM(people_count) FROM occupancy")
-                    total_people = cur.fetchone()[0]
-                return total_people if total_people else 0
-            except psycopg2.Error as e:
-                error_msg = translations[self.app.current_language]['database_error_message'].format(error=e)
+        try:
+            response = requests.get(f"{SERVER_URL}/total_people", params={"user_id": self.user_id})
+            if response.status_code == 200:
+                data = response.json()
+                return data["total_people"]
+            else:
+                error_msg = translations[self.app.current_language]['database_error_message'].format(
+                    error=response.json().get("error"))
                 messagebox.showerror(translations[self.app.current_language]['database_error'], error_msg)
-            finally:
-                conn.close()
-        else:
-            messagebox.showerror(translations[self.app.current_language]['connection_error'],
-                                 translations[self.app.current_language]['connection_error'])
+        except Exception as e:
+            error_msg = translations[self.app.current_language]['fetch_data_error'].format(error=e)
+            messagebox.showerror(translations[self.app.current_language]['error'], error_msg)
+
     def display_latest_graphs(self, frame):
         # Отображение последних графиков
         try:
-            paths = self.fetch_latest_graphs()
-            # Создаем фрейм для центрирования графиков внутри родительского фрейма
-            center_frame = tk.Frame(frame)
-            center_frame.pack(fill="both", expand=True)
+            response = requests.get(f"{SERVER_URL}/latest_graphs", params={"user_id": self.user_id})
+            if response.status_code == 200:
+                paths = response.json().get("graph_paths", [])
+                center_frame = tk.Frame(frame)
+                center_frame.pack(fill="both", expand=True)
 
-            if paths:
-                for path in paths:
-                    self.display_graph(center_frame, path)
-                # Распределение графиков по центру
-                center_frame.pack(side="top", fill="x", expand=True)
+                if paths:
+                    for path in paths:
+                        self.display_graph(center_frame, path)
+                    center_frame.pack(side="top", fill="x", expand=True)
+                else:
+                    label = tk.Label(center_frame, text=translations[self.app.current_language]['no_graphs_found'],
+                                     font=("Arial", 12))
+                    label.pack(side="top", pady=20)
             else:
-                # Если нет графиков для отображения, показываем сообщение
-                label = tk.Label(center_frame, text=translations[self.app.current_language]['no_graphs_found'],
-                                 font=("Arial", 12))
-                label.pack(side="top", pady=20)
+                error_msg = translations[self.app.current_language]['database_query_error'].format(
+                    error=response.json().get("error"))
+                messagebox.showerror(translations[self.app.current_language]['database_error'], error_msg)
         except Exception as e:
             error_msg = translations[self.app.current_language]['graph_error'].format(error=e)
             messagebox.showerror(translations[self.app.current_language]['error'], error_msg)
@@ -149,29 +153,21 @@ class HomePage(tk.Frame):
             print(translations[self.app.current_language]['loading_image_error'].format(error=e))
 
     def display_latest_data(self, frame):
-        conn = connect_db()
-        if conn:
-            try:
+        try:
+            response = requests.get(f"{SERVER_URL}/latest_data", params={"user_id": self.user_id})
+            if response.status_code == 200:
+                data = response.json().get("data", [])
                 tree = ttk.Treeview(frame, columns=('class_id', 'people_count'), show='headings')
                 tree.heading('class_id', text=translations[self.app.current_language]['class_id'])
                 tree.heading('people_count', text=translations[self.app.current_language]['people_count'])
 
-                with conn.cursor() as cur:
-                    # Фильтрация данных по user_id, отображение максимального количества людей для каждого class_id, добавленного этим пользователем
-                    cur.execute("""
-                        SELECT class_id, MAX(people_count) FROM occupancy
-                        WHERE user_id = %s
-                        GROUP BY class_id
-                        ORDER BY class_id
-                    """, (self.user_id,))
-                    for row in cur:
-                        tree.insert('', tk.END, values=row)
+                for row in data:
+                    tree.insert('', tk.END, values=row)
                 tree.pack()
-            except psycopg2.Error as e:
-                error_msg = translations[self.app.current_language]['database_query_error'].format(error=e)
+            else:
+                error_msg = translations[self.app.current_language]['database_query_error'].format(
+                    error=response.json().get("error"))
                 messagebox.showerror(translations[self.app.current_language]['error'], error_msg)
-            finally:
-                conn.close()
-        else:
-            messagebox.showerror(translations[self.app.current_language]['error'],
-                                 translations[self.app.current_language]['connection_error'])
+        except Exception as e:
+            error_msg = translations[self.app.current_language]['database_query_error'].format(error=e)
+            messagebox.showerror(translations[self.app.current_language]['error'], error_msg)

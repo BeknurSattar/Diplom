@@ -1,6 +1,8 @@
 import tkinter as tk
 from tkinter import messagebox
 import os
+
+import requests
 from PIL import Image, ImageTk
 from Helps.translations import translations
 from pages.home_page import HomePage
@@ -10,6 +12,8 @@ from pages.settings_page import SettingsPage
 from pages.profile_page import ProfilePage
 from pages.auth_page import AuthPage
 from Helps.utils import *
+
+SERVER_URL = "http://127.0.0.1:5000"
 
 class Page(tk.Tk):
     def __init__(self):
@@ -27,11 +31,6 @@ class Page(tk.Tk):
         self.current_theme_bg = "#f0f0f0"
         self.current_theme_fg = "black"
         self.configure(bg="#f0f0f0")
-
-        # Инициализация пути к директории сессии
-        self.session_dir = os.path.join(os.path.expanduser('~'), 'AnaLizSessions')
-        if not os.path.exists(self.session_dir):
-            os.makedirs(self.session_dir)
 
         self.translations = translations
         self.current_language = 'ru'  # Устанавливаем русский язык по умолчанию
@@ -67,44 +66,33 @@ class Page(tk.Tk):
     # Сохранение данных о сеансе в базу
     def save_session(self):
         """Сохраняет текущее состояние сессии в базу данных PostgreSQL."""
-        conn = None
         try:
-            conn = connect_db()
-            cur = conn.cursor()
-            # Подготовка и выполнение запроса на вставку данных сессии
-            cur.execute(
-                "INSERT INTO sessions (user_id, authenticated, language, last_access) VALUES (%s, %s, %s, %s)",
-                (self.user_id, self.is_authenticated, self.current_language, datetime.now())
-            )
-            conn.commit()  # Подтверждение изменений
-            cur.close()
-        except psycopg2.DatabaseError as error:
-            print("Ошибка базы данных:", error)
-        finally:
-            if conn is not None:
-                conn.close()
+            data = {
+                "user_id": self.user_id,
+                "authenticated": self.is_authenticated,
+                "language": self.current_language
+            }
+            response = requests.post(f"{SERVER_URL}/save_session", json=data)
+            if response.status_code != 200:
+                print("Ошибка сохранения сессии:", response.json())
+        except Exception as e:
+            print("Ошибка при сохранении сессии:", e)
 
     # Загрузка данных о сеансе из базы
     def load_session_from_db(self):
         """Загружает последнюю активную сессию пользователя из базы данных."""
-        conn = None
         try:
-            conn = connect_db()
-            cur = conn.cursor()
-            cur.execute("SELECT user_id, authenticated, language FROM sessions ORDER BY last_access DESC LIMIT 1")
-            result = cur.fetchone()
-
-            if result:
-                self.user_id, self.is_authenticated, self.current_language = result
-                if self.is_authenticated:
-                    return True
+            response = requests.get(f"{SERVER_URL}/load_session")
+            if response.status_code == 200:
+                session = response.json()
+                self.user_id = session['user_id']
+                self.is_authenticated = session['authenticated']
+                self.current_language = session['language']
+                return self.is_authenticated
             return False
-        except psycopg2.DatabaseError as error:
-            print("Ошибка базы данных:", error)
+        except Exception as e:
+            print("Ошибка при загрузке сессии:", e)
             return False
-        finally:
-            if conn:
-                conn.close()
 
     # Проверка на авторизацию
     def check_authentication(self):

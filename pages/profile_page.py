@@ -1,10 +1,12 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
-import bcrypt
 import psycopg2
+import requests
 from PIL import Image, ImageTk, ImageOps, ImageDraw
 from Helps.translations import translations
 from Helps.utils import connect_db
+
+SERVER_URL = "http://127.0.0.1:5000"
 
 class ProfilePage(tk.Frame):
     """Страница профиля пользователя, позволяющая просматривать и редактировать информацию пользователя."""
@@ -71,55 +73,38 @@ class ProfilePage(tk.Frame):
             messagebox.showerror(translations[self.current_language]['error'], translations[self.current_language]['passwords_do_not_match'])
 
     def update_password_in_db(self, new_password):
-        """Обновляет пароль пользователя в базе данных."""
-        hashed_password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')  # Хеширование пароля
-
+        """Обновляет пароль пользователя на сервере."""
         try:
-            conn = connect_db()
-            if conn:
-                cursor = conn.cursor()
-                cursor.execute("UPDATE users SET password = %s WHERE user_id = %s", (hashed_password, self.user_id))
-                conn.commit()
-                cursor.close()
+            response = requests.post(f"{SERVER_URL}/update_password", json={
+                "user_id": self.user_id,
+                "new_password": new_password
+            })
+            if response.status_code == 200:
                 messagebox.showinfo(translations[self.current_language]['success'], translations[self.current_language]['password_successfully_changed'])
             else:
-                messagebox.showerror(translations[self.current_language]['database_error'], translations[self.current_language]['connection_error'])
-        except psycopg2.Error as e:
+                error_msg = translations[self.current_language]['database_error_message'].format(error=response.json().get("error"))
+                messagebox.showerror(translations[self.current_language]['database_error'], error_msg)
+        except Exception as e:
             messagebox.showerror(translations[self.current_language]['database_error'], translations[self.current_language]['database_query_error'].format(error=e))
-        finally:
-            if conn:
-                conn.close()
 
     def load_user_profile(self):
         """Загружает информацию пользователя из базы данных и отображает ее."""
         try:
-            conn = connect_db()
-            if conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                            SELECT u.username, u.email, p.title as position, u.image_path
-                            FROM users u
-                            JOIN positions p ON u.position_id = p.id
-                            WHERE u.user_id = %s
-                        """, (self.user_id,))
-                user_info = cursor.fetchone()
-                cursor.close()
-                if user_info:
-                    self.display_user_image(user_info[3] or "Images/icon.jpg")
-                    self.username, self.email, self.image_path = user_info[0], user_info[1], user_info[3]
-
-                    # Переводим название должности
-                    self.position = translations[self.current_language]['positions'].get(user_info[2], user_info[2])
-                    self.display_user_info()
-                else:
-                    tk.Label(self, text=translations[self.current_language]['Profile_not_found'], font=("Arial", 16)).pack(pady=20)
+            response = requests.get(f"{SERVER_URL}/get_user_profile", params={"user_id": self.user_id})
+            if response.status_code == 200:
+                user_info = response.json()
+                self.display_user_image(user_info.get('image_path') or "Images/icon.jpg")
+                self.username, self.email = user_info['username'], user_info['email']
+                self.position = translations[self.current_language]['positions'].get(user_info['position'],
+                                                                                     user_info['position'])
+                self.display_user_info()
             else:
-                messagebox.showerror(translations[self.current_language]['database_error'], translations[self.current_language]['connection_error'])
-        except psycopg2.Error as e:
-            messagebox.showerror(translations[self.current_language]['database_error'], translations[self.current_language]['database_query_error'].format(error=e))
-        finally:
-            if conn:
-                conn.close()
+                messagebox.showerror(translations[self.current_language]['database_error'],
+                                     translations[self.current_language]['profile_load_error'])
+        except Exception as e:
+            messagebox.showerror(translations[self.current_language]['database_error'],
+                                 translations[self.current_language]['database_query_error'].format(error=e))
+
     def display_user_info(self):
         """Отображает информацию пользователя в виде меток."""
         # Убедитесь, что метки создаются здесь, прежде чем они будут использоваться где-либо еще.
@@ -187,7 +172,7 @@ class ProfilePage(tk.Frame):
         file_path = filedialog.askopenfilename(filetypes=[("Image files", "*.png;*.jpg;*.jpeg")])
         if file_path:
             self.update_profile_photo(file_path)
-            self.save_image_path_to_db(file_path)
+            self.image_path = file_path
 
     def update_profile_photo(self, file_path):
         """Обновляет изображение профиля пользователя."""
@@ -196,42 +181,23 @@ class ProfilePage(tk.Frame):
     def save_profile_changes(self):
         # Сохраняем изменения в базе данных
         try:
-            conn = connect_db()
-            if conn:
-                cursor = conn.cursor()
-                cursor.execute("UPDATE users SET username = %s, email = %s WHERE user_id = %s",
-                               (self.new_username, self.new_email, self.user_id))
-                conn.commit()
-                cursor.close()
-                messagebox.showinfo(translations[self.current_language]['success'], translations[self.current_language]['Profile_successfully_updated'],)
+            response = requests.post(f"{SERVER_URL}/update_profile", json={
+                "user_id": self.user_id,
+                "new_username": self.new_username,
+                "new_email": self.new_email,
+                "image_path": self.image_path
+            })
+            if response.status_code == 200:
+                messagebox.showinfo(translations[self.current_language]['success'],
+                                    translations[self.current_language]['Profile_successfully_updated'])
                 # Обновляем информацию на странице
                 self.label_username.config(
-                    text=translations[self.current_language]['username_label'].format(username=self.new_username))
-                self.label_email.config(
-                    text=translations[self.current_language]['email_label'].format(email=self.new_email))
+                    text=f"{translations[self.current_language]['username']}: {self.new_username}")
+                self.label_email.config(text=f"{translations[self.current_language]['email']}: {self.new_email}")
             else:
-                messagebox.showerror(translations[self.current_language]['database_error'], translations[self.current_language]['connection_error'])
-        except psycopg2.Error as e:
-            messagebox.showerror(translations[self.current_language]['database_error'], translations[self.current_language]['database_query_error'].format(error=e))
-        finally:
-            if conn:
-                conn.close()
-
-
-    def save_image_path_to_db(self, file_path):
-        """Сохраняет путь к новому изображению профиля в базу данных."""
-        try:
-            conn = connect_db()
-            if conn:
-                cursor = conn.cursor()
-                cursor.execute("UPDATE users SET image_path = %s WHERE user_id = %s", (file_path, self.user_id))
-                conn.commit()
-                cursor.close()
-                messagebox.showinfo(translations[self.current_language]['success'], translations[self.current_language]['Profile_picture_updated'],)
-            else:
-                messagebox.showerror(translations[self.current_language]['database_error'], translations[self.current_language]['connection_error'])
-        except psycopg2.Error as e:
-            messagebox.showerror(translations[self.current_language]['database_error'], translations[self.current_language]['database_query_error'].format(error=e))
-        finally:
-            if conn:
-                conn.close()
+                error_msg = translations[self.current_language]['database_error_message'].format(
+                    error=response.json().get("error"))
+                messagebox.showerror(translations[self.current_language]['database_error'], error_msg)
+        except Exception as e:
+            messagebox.showerror(translations[self.current_language]['database_error'],
+                                 translations[self.current_language]['database_query_error'].format(error=e))

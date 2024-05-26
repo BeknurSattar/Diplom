@@ -11,7 +11,8 @@ from Helps.utils import *
 import cv2
 from detection.persondetection import DetectorAPI
 from concurrent.futures import ThreadPoolExecutor
-#-------------------------------------------------------------------------------------
+
+SERVER_URL = "http://127.0.0.1:5000"
 
 class CameraPage(tk.Frame):
     """Страница управления видеокамерами и обработкой видео потоков."""
@@ -72,84 +73,49 @@ class CameraPage(tk.Frame):
         videos_directory = "Videoes"  # Название вашей папки с видеофайлами
         if os.path.exists(videos_directory) and os.path.isdir(videos_directory):
             files = os.listdir(videos_directory)
-            conn = connect_db()  # Предполагается, что есть функция для подключения к БД
-            cursor = conn.cursor()
             for i, file in enumerate(files, start=1):
                 if file.endswith(".mp4") or file.endswith(".avi"):
                     video_path = os.path.join(videos_directory, file)
                     video_files[i] = video_path
-                    # Добавление файла в базу данных, если он еще не добавлен
+                    # Добавление файла в базу данных через сервер Flask
                     try:
-                        cursor.execute(
-                            "INSERT INTO cameras (name, path) VALUES (%s, %s) ON CONFLICT (path) DO NOTHING;",
-                            (file, video_path)
-                        )
-                        conn.commit()
-                    except psycopg2.Error as e:
+                        requests.post(f"{SERVER_URL}/insert_video", json={"name": file, "path": video_path})
+                    except requests.RequestException as e:
                         print("Ошибка при добавлении видео файла в базу данных:", e)
-            cursor.close()
-            conn.close()
         return video_files
-
     def get_user_position_id(self):
-        """Получение ID должности пользователя из базы данных."""
+        """Получение ID должности пользователя через сервер Flask."""
         if self.user_id is None:
             print("user_id не установлен.")
             return None
-
-        position_id = None
         try:
-            conn = connect_db()
-            if conn is None:
-                print("Не удалось подключиться к базе данных.")
-                return None
-
-            cursor = conn.cursor()
-            cursor.execute("SELECT position_id FROM users WHERE user_id = %s;", (self.user_id,))
-            result = cursor.fetchone()
-            if result:
-                position_id = result[0]
+            response = requests.get(f"{SERVER_URL}/get_user_position_id", params={"user_id": self.user_id})
+            if response.status_code == 200:
+                return response.json()["position_id"]
             else:
-                print(f"Не найден position_id для user_id {self.user_id}.")
-            cursor.close()
-        except Exception as e:
+                print(f"Ошибка при получении ID должности: {response.json().get('error')}")
+                return None
+        except requests.RequestException as e:
             print(f"Ошибка при получении ID должности: {e}")
-        finally:
-            if conn:
-                conn.close()
-
-        return position_id
+            return None
 
     # Проверка доступных камер для пользователя
     def get_video_files_for_user(self):
-        """Получение списка доступных видео файлов из базы данных в зависимости от должности пользователя."""
+        """Получение списка доступных видео файлов через сервер Flask в зависимости от должности пользователя."""
         video_files = {}
-        position_id = self.get_user_position_id()  # Получаем ID должности пользователя
-
+        position_id = self.get_user_position_id()
         if position_id is None:
             print("Не удалось получить ID должности пользователя.")
             return video_files
 
         try:
-            conn = connect_db()
-            if conn is None:
-                print("Не удалось подключиться к базе данных.")
-                return video_files
-
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT c.id, c.path
-                FROM cameras c
-                JOIN camera_permissions cp ON c.id = cp.camera_id
-                WHERE cp.position_id = %s;
-                """, (position_id,))
-            video_files = {row[0]: row[1] for row in cursor.fetchall()}  # Используем строковый ключ для ID
-            cursor.close()
-        except Exception as e:
+            response = requests.get(f"{SERVER_URL}/get_video_files_for_user", params={"position_id": position_id})
+            if response.status_code == 200:
+                video_files = {item['id']: item['path'] for item in response.json()["video_files"]}
+            else:
+                print(f"Ошибка при получении доступных видео: {response.json().get('error')}")
+        except requests.RequestException as e:
             print(f"Ошибка при получении доступных видео: {e}")
-        finally:
-            if conn:
-                conn.close()
 
         return video_files
 
@@ -278,9 +244,17 @@ class CameraPage(tk.Frame):
                 processing_speed_data.append(fps)
 
                 # Проверяем, нужно ли сохранять данные
-                if (time.time() - last_save_time) >= 120:
+                if (time.time() - last_save_time) >= 5:
                     detected_people = int(num)
-                    insert_data(detected_people, index, self.user_id, session_start)
+                    try:
+                        requests.post(f"{SERVER_URL}/insert_data", json={
+                            "detected_people": detected_people,
+                            "class_id": index,
+                            "user_id": self.user_id,
+                            "session_start": session_start.isoformat()  # Преобразование в строку
+                        })
+                    except requests.RequestException as e:
+                        print(f"Ошибка при сохранении данных: {e}")
                     last_save_time = time.time()
                 # Повторение обработки через заданный интервал
                 video_label.after(30, analyze_and_update)
@@ -344,34 +318,28 @@ class CameraPage(tk.Frame):
         if not os.path.exists(base_directory):
             os.makedirs(base_directory)
 
-        # Форматируем текущую дату и время для включения в имя файла
         date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        # Соединяемся с базой данных для получения идентификаторов и названий типов графиков
-        conn = connect_db()
-        if conn:
-            try:
-                cursor = conn.cursor()
-                cursor.execute("SELECT id, type_name FROM graph_types;")
-                graph_types = cursor.fetchall()
-
-                # Проходим по всем типам графиков и сохраняем соответствующие файлы
-                for graph_type_id, graph_type_name in graph_types:
-                    # Создание папки для каждого типа графика
+        try:
+            response = requests.get(f"{SERVER_URL}/get_graph_types")
+            if response.status_code == 200:
+                graph_types = response.json()["graph_types"]
+                for graph_type in graph_types:
+                    graph_type_id = graph_type['id']
+                    graph_type_name = graph_type['type_name']
                     type_directory = os.path.join(base_directory, graph_type_name)
                     if not os.path.exists(type_directory):
                         os.makedirs(type_directory)
 
                     graph_filename = os.path.join(type_directory, f'{graph_type_name}_{class_id}_{date_str}.png')
                     plt.figure()
-                    # Setup data based on graph type
                     if graph_type_name == 'people_graph':
                         data = people_data
                         title = translations[self.app.current_language]['number_of_people_over_time']
                     elif graph_type_name == 'accuracy_graph':
                         data = accuracy_data
                         title = translations[self.app.current_language]['accuracy_over_time']
-                    else:  # processing_speed_graph
+                    else:
                         data = processing_speed_data
                         title = translations[self.app.current_language]['processing_speed_over_time']
 
@@ -382,22 +350,25 @@ class CameraPage(tk.Frame):
                     plt.savefig(graph_filename)
                     plt.close()
 
-                    # Сохраняем информацию о графике в базу данных, добавляя session_start
-                    cursor.execute(
-                        "INSERT INTO graphs (user_id, class_id, graph_type_id, graph_path, upload_date, session_start) VALUES (%s, %s, %s, %s, %s, %s);",
-                        (user_id, class_id, graph_type_id, graph_filename, datetime.now(), session_start))
+                    # Конвертируем session_start в строку перед отправкой запроса
+                    session_start_str = session_start.isoformat()
 
-                conn.commit()
+                    requests.post(f"{SERVER_URL}/save_graph_info", json={
+                        "user_id": user_id,
+                        "class_id": class_id,
+                        "graph_type_id": graph_type_id,
+                        "graph_path": graph_filename,
+                        "session_start": session_start_str
+                    })
+
                 print(translations[self.app.current_language]['graphs_created_and_saved'])
-            except Exception as e:
-                error_msg = translations[self.app.current_language]['error_saving_graphs'].format(error=str(e))
-                messagebox.showerror(translations[self.app.current_language]['error'], error_msg)
-            finally:
-                cursor.close()
-                conn.close()
-        else:
-            messagebox.showerror(translations[self.app.current_language]['database_connection_error'],
-                                 translations[self.app.current_language]['database_connection_error'])
+            else:
+                messagebox.showerror(translations[self.app.current_language]['error'],
+                                     translations[self.app.current_language]['error_saving_graphs'].format(
+                                         error=response.json().get('error')))
+        except requests.RequestException as e:
+            messagebox.showerror(translations[self.app.current_language]['error'],
+                                 translations[self.app.current_language]['error_saving_graphs'].format(error=e))
 
     def remove_video(self, video_label, cap, box):
         """Удаление видео из интерфейса и остановка анализа видео."""

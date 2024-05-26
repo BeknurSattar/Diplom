@@ -3,6 +3,7 @@ import tkinter as tk
 from tkinter import messagebox
 import psycopg2
 import bcrypt
+import requests
 from Helps.translations import translations
 from Helps.utils import connect_db
 
@@ -119,23 +120,15 @@ class RegisterPage(tk.Toplevel):
         self.destroy()
 
     def fetch_positions(self):
-        """Загрузка и перевод должностей из базы данных."""
-        conn = connect_db()
-        if conn:
-            try:
-                cursor = conn.cursor()
-                cursor.execute("SELECT id, title FROM positions ORDER BY title")
-                positions = cursor.fetchall()
-                # Переводим названия должностей
-                translated_positions = [(pos[0], translations[self.current_language]['positions'].get(pos[1], pos[1]))
-                                        for pos in positions]
-                cursor.close()
-                conn.close()
-                return translated_positions
-            except psycopg2.Error as e:
-                print(f"Ошибка запроса к базе данных: {e}")
-                return []
-        return []
+        """Запрос должностей с сервера."""
+        try:
+            response = requests.get('http://127.0.0.1:5000/api/positions')
+            response.raise_for_status()
+            positions = response.json()['positions']
+            return [pos for pos in positions]
+        except requests.RequestException as e:
+            messagebox.showerror(translations[self.current_language]['error'], f"Ошибка загрузки должностей: {e}")
+            return []
 
     def validate_password(self, password):
         """Проверка пароля на соответствие требованиям."""
@@ -158,7 +151,6 @@ class RegisterPage(tk.Toplevel):
         password = self.entry_password.get()
         confirm_password = self.entry_confirm_password.get()
         position_title = self.selected_position.get()
-        position_id = next(pos[0] for pos in self.positions if pos[1] == position_title)
 
         if not all([username, email, password, confirm_password]):
             messagebox.showerror(translations[self.current_language]['error'], translations[self.current_language]['Please_fill_in_all_fields'])
@@ -166,15 +158,6 @@ class RegisterPage(tk.Toplevel):
 
         if not self.is_valid_email(email):
             messagebox.showerror(translations[self.current_language]['error'], translations[self.current_language]['Enter_a_valid_email_address'])
-            return
-
-        conn = connect_db()
-        if not conn:
-            messagebox.showerror(translations[self.current_language]['error'], translations[self.current_language]['Failed_to_connect_to_the_database'])
-            return
-
-        if not self.is_unique_email(email, conn):
-            messagebox.showerror(translations[self.current_language]['error'], translations[self.current_language]['This_email_address_is_already_in_use'])
             return
 
         if password != confirm_password:
@@ -186,22 +169,20 @@ class RegisterPage(tk.Toplevel):
             messagebox.showerror(translations[self.current_language]['error'], validation_msg)
             return
 
-        hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')  # Хеширование пароля
-
+        # Отправка запроса на сервер для регистрации
         try:
-            cursor = conn.cursor()
-            cursor.execute("INSERT INTO users (username, email, password, position_id) VALUES (%s, %s, %s, %s)",
-                           (username, email, hashed_password, position_id))
-            conn.commit()
-            cursor.close()
+            response = requests.post('http://127.0.0.1:5000/api/register', json={
+                'username': username,
+                'email': email,
+                'password': password,
+                'position_title': position_title
+            })
+            response.raise_for_status()
             messagebox.showinfo(translations[self.current_language]['success'], translations[self.current_language]['Registration_completed'])
             self.go_to_login_page()
-        except psycopg2.Error as e:
-            print("Ошибка при выполнении SQL-запроса:", e)
-            messagebox.showerror(translations[self.current_language]['error'], translations[self.current_language]['An_error_registration_Please_again'])
-        finally:
-            if conn:
-                conn.close()
+        except requests.RequestException as e:
+            messagebox.showerror(translations[self.current_language]['error'], f"Ошибка регистрации: {e}")
+
 
 if __name__ == "__main__":
     app = tk.Tk()
