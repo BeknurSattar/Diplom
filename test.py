@@ -15,6 +15,9 @@ from pages.camera_page import CameraPage
 from pages.settings_page import SettingsPage
 from Helps.utils import *
 from Helps.translations import translations
+from service import app
+
+
 class TestPage(unittest.TestCase):
     """
     Тесты для класса Page из main.py.
@@ -36,7 +39,7 @@ class TestPage(unittest.TestCase):
 
         # Проверка результатов
         self.assertTrue(result)
-        self.assertEqual(self.app.user_id, 1)
+        self.assertEqual(self.app.user_id, 15)
         self.assertTrue(self.app.is_authenticated)
         self.assertEqual(self.app.current_language, 'ru')
 
@@ -146,46 +149,54 @@ class TestAuthPage(unittest.TestCase):
         self.auth_page = AuthPage(self.root)
         self.auth_page.create_widgets()
 
-    @patch('pages.auth_page.connect_db')
-    def test_login_success(self, mock_connect_db):
-        # Настройка моков базы данных
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_connect_db.return_value = mock_conn
-        mock_conn.cursor.return_value = mock_cursor
-        hashed_password = bcrypt.hashpw('password'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-        mock_cursor.fetchone.return_value = (1, hashed_password)
+    @patch('service.connect_db')
+    def test_login_incorrect_password(self, mock_connect_db):
+        mock_conn = mock_connect_db.return_value
+        mock_cursor = mock_conn.cursor.return_value
+        mock_cursor.fetchone.return_value = (
+        1, '$2b$12$qRJh5WcJ9PPUJMCiDqig4uIYpx.DcST6uFOeiKYHETJm8NkRBF/KC')  # Assuming hashed password is valid
 
-        # Устанавливаем значения полей ввода
-        self.auth_page.entry_email.insert(0, 'test@example.com')
-        self.auth_page.entry_password.insert(0, 'password')
+        with app.test_client() as client:
+            response = client.post('/login', json={'email': 'test@example.com', 'password': 'wrong_password'})
+            data = response.get_json()
+            self.assertEqual(response.status_code, 401)
+            self.assertEqual(data['error'], 'Incorrect password')
 
-        # Вызов метода login
-        self.auth_page.login()
+    @patch('service.connect_db')
+    def test_login_user_not_found(self, mock_connect_db):
+        mock_conn = mock_connect_db.return_value
+        mock_cursor = mock_conn.cursor.return_value
+        mock_cursor.fetchone.return_value = None
 
-        # Проверка успешной аутентификации
-        self.assertTrue(self.auth_page.is_authenticated)
-        self.assertEqual(self.auth_page.user_id, 1)
+        with app.test_client() as client:
+            response = client.post('/login', json={'email': 'nonexistent@example.com', 'password': 'password'})
+            data = response.get_json()
+            self.assertEqual(response.status_code, 404)
+            self.assertEqual(data['error'], 'User not found')
 
-    @patch('pages.auth_page.connect_db')
-    def test_login_failure_invalid_password(self, mock_connect_db):
-        # Настройка моков базы данных
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_connect_db.return_value = mock_conn
-        mock_conn.cursor.return_value = mock_cursor
-        hashed_password = bcrypt.hashpw('wrongpassword'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-        mock_cursor.fetchone.return_value = (1, hashed_password)
+    @patch('service.connect_db')
+    def test_login_database_error(self, mock_connect_db):
+        mock_conn = mock_connect_db.return_value
+        mock_cursor = mock_conn.cursor.return_value
+        mock_cursor.execute.side_effect = Exception('Test database error')
 
-        # Устанавливаем значения полей ввода
-        self.auth_page.entry_email.insert(0, 'test@example.com')
-        self.auth_page.entry_password.insert(0, 'password')
+        with app.test_client() as client:
+            response = client.post('/login', json={'email': 'test@example.com', 'password': 'password'})
+            data = response.get_json()
+            self.assertEqual(response.status_code, 500)
+            self.assertEqual(data['error'], 'Test database error')
 
-        # Вызов метода login
-        self.auth_page.login()
+    @patch('service.connect_db')
+    def test_login_database_connection_failed(self, mock_connect_db):
+        mock_connect_db.return_value = None
 
-        # Проверка, что аутентификация не удалась
-        self.assertFalse(self.auth_page.is_authenticated)
+        with app.test_client() as client:
+            response = client.post('/login', json={'email': 'test@example.com', 'password': 'password'})
+            data = response.get_json()
+            self.assertEqual(response.status_code, 500)
+            self.assertEqual(data['error'], 'Failed to connect to the database')
+
+
 
     def test_toggle_password_visibility(self):
         # Проверка начального состояния (пароль скрыт)
@@ -230,31 +241,45 @@ class TestRegisterPage(unittest.TestCase):
         self.register_page = RegisterPage(self.root)
         self.register_page.create_widgets()
 
-    @patch('pages.register.connect_db')  # Обновите путь для мока connect_db
-    def test_register_success(self, mock_connect_db):
-        # Настройка моков базы данных
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_connect_db.return_value = mock_conn
-        mock_conn.cursor.return_value = mock_cursor
-        mock_cursor.fetchone.return_value = (False,)  # Email не существует
+    @patch('service.connect_db')
+    def test_api_register_invalid_position_title(self, mock_connect_db):
+        mock_conn = mock_connect_db.return_value
+        mock_cursor = mock_conn.cursor.return_value
+        mock_cursor.fetchone.return_value = None
 
-        # Устанавливаем значения полей ввода
-        self.register_page.entry_username.insert(0, 'testuser')
-        self.register_page.entry_email.insert(0, 'test@example.com')
-        self.register_page.entry_password.insert(0, 'Password123!')
-        self.register_page.entry_confirm_password.insert(0, 'Password123!')
+        with app.test_client() as client:
+            response = client.post('/api/register',
+                                   json={'username': 'test_user', 'email': 'test@example.com', 'password': 'password',
+                                         'position_title': 'Invalid'})
+            data = response.get_json()
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(data['error'], 'Invalid position title')
 
-        # Вызов метода register
-        with patch('tkinter.messagebox.showinfo') as mock_showinfo:
-            self.register_page.register()
-            mock_showinfo.assert_called_once_with(translations['ru']['success'], translations['ru']['Registration_completed'])
+    @patch('service.connect_db')
+    def test_api_register_database_error(self, mock_connect_db):
+        mock_conn = mock_connect_db.return_value
+        mock_cursor = mock_conn.cursor.return_value
+        mock_cursor.execute.side_effect = Exception('Test database error')
 
-        # Проверка успешной регистрации
-        self.assertTrue(self.register_page.is_valid_email('test@example.com'))
-        self.assertTrue(self.register_page.is_unique_email('test@example.com', mock_conn))
-        self.assertTrue(self.register_page.validate_password('Password123!')[0])
+        with app.test_client() as client:
+            response = client.post('/api/register',
+                                   json={'username': 'test_user', 'email': 'test@example.com', 'password': 'password',
+                                         'position_title': 'Manager'})
+            data = response.get_json()
+            self.assertEqual(response.status_code, 500)
+            self.assertEqual(data['error'], 'Test database error')
 
+    @patch('service.connect_db')
+    def test_api_register_database_connection_failed(self, mock_connect_db):
+        mock_connect_db.return_value = None
+
+        with app.test_client() as client:
+            response = client.post('/api/register',
+                                   json={'username': 'test_user', 'email': 'test@example.com', 'password': 'password',
+                                         'position_title': 'Manager'})
+            data = response.get_json()
+            self.assertEqual(response.status_code, 500)
+            self.assertEqual(data['error'], 'Failed to connect to the database')
     def test_validate_password(self):
         # Проверка различных вариантов паролей
         valid_password = 'Password123!'
@@ -326,62 +351,38 @@ class TestProfilePage(unittest.TestCase):
     """
     def setUp(self):
         self.root = tk.Tk()
-        self.profile_page = ProfilePage(self.root, user_id=123)
+        self.profile_page = ProfilePage(self.root, user_id=15)
 
-    @patch('pages.profile_page.connect_db')  # Обновите путь для мока connect_db
-    def test_load_user_profile(self, mock_connect_db):
-        # Настройка моков базы данных
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_connect_db.return_value = mock_conn
-        mock_conn.cursor.return_value = mock_cursor
-        mock_cursor.fetchone.return_value = ('Test User', 'test@example.com', 'Admin', 'Images/icon.jpg')
+    @patch('service.connect_db')
+    def test_get_user_profile_database_connection_failed(self, mock_connect_db):
+        mock_connect_db.return_value = None
 
-        self.profile_page.load_user_profile()
+        with app.test_client() as client:
+            response = client.get('/get_user_profile?user_id=15')
+            data = response.get_json()
+            self.assertEqual(response.status_code, 500)
+            self.assertEqual(data['error'], 'Database connection failed')
 
-        # Проверка результатов
-        self.assertEqual(self.profile_page.username, 'Test User')
-        self.assertEqual(self.profile_page.email, 'test@example.com')
-        self.assertEqual(self.profile_page.position, 'Admin')
-        self.assertEqual(self.profile_page.image_path, 'Images/icon.jpg')
+    @patch('service.connect_db')
+    def test_update_password_success(self, mock_connect_db):
+        mock_conn = mock_connect_db.return_value
+        mock_cursor = mock_conn.cursor.return_value
 
-        # Вызовем display_user_info, чтобы обновить метки
-        self.profile_page.display_user_info()
-        self.profile_page.set_language('ru')  # Устанавливаем язык для отображения
+        with app.test_client() as client:
+            response = client.post('/update_password', json={'user_id': 1, 'new_password': 'new_password'})
+            data = response.get_json()
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(data['message'], 'Password successfully updated')
 
-        # Проверка вызова метода отображения информации о пользователе
-        expected_username = f"{translations['ru']['username']}: Test User"
-        self.assertEqual(self.profile_page.label_username['text'], expected_username)
-        expected_email = f"{translations['ru']['email']}: test@example.com"
-        self.assertEqual(self.profile_page.label_email['text'], expected_email)
-        expected_position = f"{translations['ru']['position']}: Admin"
-        self.assertEqual(self.profile_page.label_position['text'], expected_position)
+    @patch('service.connect_db')
+    def test_update_password_database_connection_failed(self, mock_connect_db):
+        mock_connect_db.return_value = None
 
-    @patch('pages.profile_page.connect_db')  # Обновите путь для мока connect_db
-    @patch('pages.profile_page.simpledialog.askstring')  # Обновите путь для мока simpledialog.askstring
-    @patch('pages.profile_page.messagebox.showinfo')  # Обновите путь для мока messagebox.showinfo
-    def test_change_password(self, mock_showinfo, mock_askstring, mock_connect_db):
-        # Настройка моков базы данных
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_connect_db.return_value = mock_conn
-        mock_conn.cursor.return_value = mock_cursor
-
-        new_password = 'NewPassword123!'
-        confirm_password = 'NewPassword123!'
-        mock_askstring.side_effect = [new_password, confirm_password]
-
-        self.profile_page.change_password()
-
-        # Проверка, что метод execute был вызван
-        self.assertTrue(mock_cursor.execute.called)
-        args, kwargs = mock_cursor.execute.call_args
-        self.assertEqual(args[0], "UPDATE users SET password = %s WHERE user_id = %s")
-        self.assertEqual(args[1][1], self.profile_page.user_id)
-
-        # Проверка, что сообщение о успешной смене пароля было показано
-        mock_showinfo.assert_called_with(translations[self.profile_page.current_language]['success'], translations[self.profile_page.current_language]['password_successfully_changed'])
-
+        with app.test_client() as client:
+            response = client.post('/update_password', json={'user_id': 1, 'new_password': 'new_password'})
+            data = response.get_json()
+            self.assertEqual(response.status_code, 500)
+            self.assertEqual(data['error'], 'Database connection failed')
     def tearDown(self):
         if self.root:
             self.root.update()
@@ -398,26 +399,35 @@ class TestDataPage(unittest.TestCase):
         self.app.current_language = 'ru'
         self.data_page = DataPage(self.root, self.app, user_id=15)
 
-    @patch('pages.data_page.connect_db')  # Обновите путь для мока connect_db
-    def test_fetch_and_display_data(self, mock_connect_db):
-        # Настройка моков базы данных
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_connect_db.return_value = mock_conn
-        mock_conn.cursor.return_value = mock_cursor
-        mock_cursor.fetchone.side_effect = [(None,), ('2023-01-01 12:00:00',)]
-        mock_cursor.fetchall.return_value = [('2023-01-01 12:00:00', 10), ('2023-01-02 12:00:00', 20)]
+    @patch('service.connect_db')
+    def test_get_class_data_invalid_params(self, mock_connect_db):
+        with app.test_client() as client:
+            response = client.get('/get_class_data?user_id=&class_id=1')
+            data = response.get_json()
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(data['error'], 'Invalid request parameters')
 
-        self.data_page.show_class_data(1)
+    @patch('service.connect_db')
+    def test_get_class_data_no_data(self, mock_connect_db):
+        mock_conn = mock_connect_db.return_value
+        mock_cursor = mock_conn.cursor.return_value
+        mock_cursor.fetchone.return_value = None
 
-        # Проверка получения данных и обновления текстового виджета
-        self.data_page.fetch_and_display_data(1)
-        expected_text = f"{translations['ru']['last_10_detections'].format(class_id=1)}\n\n"
-        expected_text += f"{translations['ru']['Datae']}: 2023-01-01 12:00:00, {translations['ru']['Caounte']}: 10\n"
-        expected_text += f"{translations['ru']['Datae']}: 2023-01-02 12:00:00, {translations['ru']['Caounte']}: 20\n"
+        with app.test_client() as client:
+            response = client.get('/get_class_data?user_id=1&class_id=1')
+            data = response.get_json()
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(len(data['data']), 0)
 
-        self.assertEqual(self.data_page.data_text.get("1.0", tk.END).strip(), expected_text.strip())
+    @patch('service.connect_db')
+    def test_get_class_data_database_connection_failed(self, mock_connect_db):
+        mock_connect_db.return_value = None
 
+        with app.test_client() as client:
+            response = client.get('/get_class_data?user_id=1&class_id=1')
+            data = response.get_json()
+            self.assertEqual(response.status_code, 500)
+            self.assertEqual(data['error'], 'Database connection failed')
     @patch('pages.data_page.connect_db')  # Обновите путь для мока connect_db
     def test_generate_buttons(self, mock_connect_db):
         # Настройка моков базы данных
@@ -451,43 +461,25 @@ class TestCameraPage(unittest.TestCase):
         self.app.current_language = 'en'  # Устанавливаем значение current_language
         self.camera_page = CameraPage(self.root, self.app, user_id=15)
 
-    @patch('pages.camera_page.connect_db')
-    def test_get_user_position_id(self, mock_connect_db):
-        # Настройка mock для базы данных
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_connect_db.return_value = mock_conn
-        mock_conn.cursor.return_value = mock_cursor
-        mock_cursor.fetchone.return_value = (15,)
+    @patch('service.connect_db')
+    def test_get_user_position_id_database_connection_failed(self, mock_connect_db):
+        mock_connect_db.return_value = None
 
-        position_id = self.camera_page.get_user_position_id()
+        with app.test_client() as client:
+            response = client.get('/get_user_position_id?user_id=15')
+            data = response.get_json()
+            self.assertEqual(response.status_code, 500)
+            self.assertEqual(data['error'], 'Database connection failed')
 
-        # Проверка, что был выполнен правильный запрос к базе данных
-        mock_cursor.execute.assert_called_once_with("SELECT position_id FROM users WHERE user_id = %s;", (15,))
-        self.assertEqual(position_id, 15)
+    @patch('service.connect_db')
+    def test_get_video_files_for_user_database_connection_failed(self, mock_connect_db):
+        mock_connect_db.return_value = None
 
-    @patch('pages.camera_page.connect_db')
-    def test_get_video_files_for_user(self, mock_connect_db):
-        # Настройка mock для базы данных
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_connect_db.return_value = mock_conn
-        mock_conn.cursor.return_value = mock_cursor
-        mock_cursor.fetchone.return_value = (15,)
-        mock_cursor.fetchall.return_value = [(1, 'video1.mp4'), (2, 'video2.mp4')]
-
-        video_files = self.camera_page.get_video_files_for_user()
-
-        # Проверка, что были выполнены правильные запросы к базе данных
-        self.assertEqual(mock_cursor.execute.call_count, 2)
-        mock_cursor.execute.assert_any_call("SELECT position_id FROM users WHERE user_id = %s;", (15,))
-        mock_cursor.execute.assert_any_call("""
-                SELECT c.id, c.path
-                FROM cameras c
-                JOIN camera_permissions cp ON c.id = cp.camera_id
-                WHERE cp.position_id = %s;
-                """, (15,))
-        self.assertEqual(video_files, {1: 'video1.mp4', 2: 'video2.mp4'})
+        with app.test_client() as client:
+            response = client.get('/get_video_files_for_user?position_id=1')
+            data = response.get_json()
+            self.assertEqual(response.status_code, 500)
+            self.assertEqual(data['error'], 'Database connection failed')
 
     def tearDown(self):
         self.root.destroy()

@@ -5,15 +5,21 @@ libraries used : python 3
 		 cv2
 		 argparse
 	     matplotlib.pyplot
-	 	 numpy
+numpy~=1.26.4
 		 time
 		 os
-		 tensorflow
-		 fpdf
+tensorflow~=2.16.0rc0
+fpdf~=1.7.2
 		 time
 		 datetime
-		 bcrypt
+bcrypt~=4.1.2
 		 psycopg2
 		 docx
 		 re
 		 webbrowser
+flask~=3.0.3
+requests~=2.31.0
+pillow~=10.2.0
+opencv-python~=4.8.1.78
+matplotlib~=3.8.3
+ultralytics~=8.2.18
