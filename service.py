@@ -225,32 +225,29 @@ def update_profile():
 def get_class_data():
     user_id = request.args.get('user_id')
     class_id = request.args.get('class_id')
+    session_start_str = request.args.get('session_start')
 
-    if not user_id or not class_id:
+    if not user_id or not class_id or not session_start_str:
         return jsonify({"error": "Invalid request parameters"}), 400
+
+    # Преобразование строки в datetime объект
+    session_start = datetime.strptime(session_start_str, "%a, %d %b %Y %H:%M:%S GMT")
 
     conn = connect_db()
     if conn:
         try:
             with conn.cursor() as cur:
-                # Получение времени начала последней сессии
                 cur.execute(
-                    "SELECT MAX(session_start) FROM occupancy WHERE class_id = %s AND user_id = %s;",
-                    (class_id, user_id))
-                last_session_start = cur.fetchone()[0]
-
-                if last_session_start is None:
-                    return jsonify({"data": []}), 200
-
-                # Запрос данных о последних 10 детекциях по class_id
-                cur.execute(
-                    "SELECT detection_date, people_count FROM occupancy WHERE class_id = %s AND user_id = %s AND session_start = %s",
-                    (class_id, user_id, last_session_start))
+                    """
+                    SELECT detection_date, people_count
+                    FROM occupancy
+                    WHERE class_id = %s AND user_id = %s AND DATE_TRUNC('second', session_start) = %s
+                    """,
+                    (class_id, user_id, session_start)
+                )
                 rows = cur.fetchall()
 
-                # Преобразование данных в список словарей и форматирование даты
-                data = [{"detection_date": row[0].strftime("%a, %d %b %Y %H:%M:%S GMT"), "people_count": row[1]} for row
-                        in rows]
+                data = [{"detection_date": row[0].strftime("%a, %d %b %Y %H:%M:%S GMT"), "people_count": row[1]} for row in rows]
 
             return jsonify({"data": data}), 200
         except psycopg2.Error as e:
@@ -259,27 +256,23 @@ def get_class_data():
             conn.close()
     else:
         return jsonify({"error": "Database connection failed"}), 500
-
 @app.route('/get_graph_path', methods=['GET'])
 def get_graph_path():
     user_id = request.args.get('user_id')
     class_id = request.args.get('class_id')
     graph_number = request.args.get('graph_number')
+    session_start_str = request.args.get('session_start')
+    # Преобразование строки в datetime объект
+    session_start = datetime.strptime(session_start_str, "%a, %d %b %Y %H:%M:%S GMT")
     conn = connect_db()
     if conn:
         try:
             with conn.cursor() as cur:
-                cur.execute("""
-                    SELECT MAX(session_start) FROM graphs
-                    WHERE class_id = %s AND graph_type_id = %s AND user_id = %s;
-                """, (class_id, graph_number, user_id))
-                last_session_start = cur.fetchone()[0]
-
-                if last_session_start:
+                if session_start:
                     cur.execute("""
-                        SELECT graph_path FROM graphs
-                        WHERE class_id = %s AND graph_type_id = %s AND session_start = %s AND user_id = %s;
-                    """, (class_id, graph_number, last_session_start, user_id))
+                    SELECT graph_path FROM graphs
+                    WHERE class_id = %s AND graph_type_id = %s AND DATE_TRUNC('second', session_start) = %s AND user_id = %s;
+                    """, (class_id, graph_number, session_start, user_id))
                     result = cur.fetchone()
                     if result:
                         return jsonify({"graph_path": result[0]}), 200
@@ -287,6 +280,33 @@ def get_graph_path():
                         return jsonify({"error": "Graph not found"}), 404
                 else:
                     return jsonify({"error": "No recent sessions"}), 404
+        except psycopg2.Error as e:
+            return jsonify({"error": str(e)}), 500
+        finally:
+            conn.close()
+    else:
+        return jsonify({"error": "Database connection failed"}), 500
+
+@app.route('/get_class_sessions', methods=['GET'])
+def get_class_sessions():
+    user_id = request.args.get('user_id')
+    class_id = request.args.get('class_id')
+
+    if not user_id or not class_id:
+        return jsonify({"error": "Invalid request parameters"}), 400
+
+    conn = connect_db()
+    if conn:
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT DISTINCT session_start FROM occupancy
+                    WHERE class_id = %s AND user_id = %s
+                    ORDER BY session_start DESC;
+                """, (class_id, user_id))
+                sessions = cur.fetchall()
+                session_list = [{"session_start": session[0]} for session in sessions]
+            return jsonify({"sessions": session_list}), 200
         except psycopg2.Error as e:
             return jsonify({"error": str(e)}), 500
         finally:
@@ -395,6 +415,7 @@ def insert_data():
     user_id = data.get('user_id')
     session_start_str = data.get('session_start')
     session_start = datetime.fromisoformat(session_start_str)  # Преобразование строки в datetime
+
     conn = connect_db()
     if conn:
         try:

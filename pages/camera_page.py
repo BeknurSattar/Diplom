@@ -257,7 +257,7 @@ class CameraPage(tk.Frame):
                         print(f"Ошибка при сохранении данных: {e}")
                     last_save_time = time.time()
                 # Повторение обработки через заданный интервал
-                video_label.after(30, analyze_and_update)
+                video_label.after(60, analyze_and_update)
             else:
                 # Создаем графики и сохраняем их
                 # Видео закончилось, активируем кнопку сохранения графиков
@@ -294,7 +294,7 @@ class CameraPage(tk.Frame):
                 imgtk = self.create_video_image(frame, video_width, video_height)
                 full_video_label.configure(image=imgtk)
                 full_video_label.imgtk = imgtk
-                full_video_label.after(33, update_fullscreen_video)
+                full_video_label.after(60, update_fullscreen_video)
             else:
                 cap.release()
                 top_level.destroy()

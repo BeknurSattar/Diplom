@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import scrolledtext, messagebox
+from tkinter import scrolledtext, messagebox, ttk
 import os
 import requests
 from fpdf import FPDF
@@ -58,6 +58,11 @@ class DataPage(tk.Frame):
         self.content = tk.Frame(self)
         self.content.pack(expand=True, fill="both")
 
+        self.session_combobox = ttk.Combobox(self.content, width=30)
+        self.session_combobox.pack(pady=10)
+
+        self.fetch_sessions(class_id)
+
         self.data_text = scrolledtext.ScrolledText(self.content, wrap=tk.WORD, width=50, height=10)
         self.data_text.pack(pady=10)
 
@@ -93,11 +98,32 @@ class DataPage(tk.Frame):
                                      command=self.back_to_menu)
         self.back_button.pack(pady=10)
 
+
+    def fetch_sessions(self, class_id):
+        """Fetch available sessions for the selected class."""
+        try:
+            response = requests.get(f"{SERVER_URL}/get_class_sessions", params={"user_id": self.user_id, "class_id": class_id})
+            if response.status_code == 200:
+                sessions = response.json()["sessions"]
+                session_list = [session["session_start"] for session in sessions]
+                self.session_combobox["values"] = session_list
+                if session_list:
+                    self.session_combobox.current(0)
+
+            else:
+                messagebox.showerror(translations[self.current_language]['database_error'],
+                                     translations[self.current_language]['fetch_data_error'].format(
+                                         error=response.json().get("error")))
+        except Exception as e:
+            messagebox.showerror(translations[self.current_language]['database_error'],
+                                 translations[self.current_language]['fetch_data_error'].format(error=e))
+
     def fetch_and_display_data(self, class_id):
         """Получение и отображение данных о последних 10 детекциях и данных последнего обработанного видео."""
         try:
+
             response = requests.get(f"{SERVER_URL}/get_class_data",
-                                    params={"user_id": self.user_id, "class_id": class_id})
+                                    params={"user_id": self.user_id, "class_id": class_id, "session_start": self.session_combobox.get()})
             if response.status_code == 200:
                 rows = response.json()["data"]
                 display_text = f"{translations[self.app.current_language]['last_10_detections'].format(class_id=class_id)}\n\n"
@@ -114,13 +140,12 @@ class DataPage(tk.Frame):
         except Exception as e:
             messagebox.showerror(translations[self.app.current_language]['database_error'],
                                  translations[self.app.current_language]['fetch_data_error'].format(error=e))
-
     def display_graph(self, class_id, graph_number):
         """Отображение выбранного графика."""
         try:
             response = requests.get(f"{SERVER_URL}/get_graph_path",
                                     params={"user_id": self.user_id, "class_id": class_id,
-                                            "graph_number": graph_number})
+                                            "graph_number": graph_number, "session_start": self.session_combobox.get()})
             if response.status_code == 200:
                 graph_path = response.json()["graph_path"]
                 img = Image.open(graph_path)
@@ -286,7 +311,7 @@ class DataPage(tk.Frame):
         """Запрос данных для отчета, начиная с последней обработанной видеосессии."""
         try:
             response = requests.get(f"{SERVER_URL}/get_class_data",
-                                    params={"user_id": self.user_id, "class_id": class_id})
+                                    params={"user_id": self.user_id, "class_id": class_id, "session_start": self.session_combobox.get()})
             if response.status_code == 200:
                 data = response.json()["data"]
                 # Преобразование строковой даты в объект datetime
@@ -344,7 +369,7 @@ class DataPage(tk.Frame):
         try:
             response = requests.get(f"{SERVER_URL}/get_graph_path",
                                     params={"user_id": self.user_id, "class_id": class_id,
-                                            "graph_number": graph_number})
+                                            "graph_number": graph_number, "session_start": self.session_combobox.get()})
             if response.status_code == 200:
                 return response.json()["graph_path"]
             else:

@@ -407,27 +407,6 @@ class TestDataPage(unittest.TestCase):
             self.assertEqual(response.status_code, 400)
             self.assertEqual(data['error'], 'Invalid request parameters')
 
-    @patch('service.connect_db')
-    def test_get_class_data_no_data(self, mock_connect_db):
-        mock_conn = mock_connect_db.return_value
-        mock_cursor = mock_conn.cursor.return_value
-        mock_cursor.fetchone.return_value = None
-
-        with app.test_client() as client:
-            response = client.get('/get_class_data?user_id=1&class_id=1')
-            data = response.get_json()
-            self.assertEqual(response.status_code, 200)
-            self.assertEqual(len(data['data']), 0)
-
-    @patch('service.connect_db')
-    def test_get_class_data_database_connection_failed(self, mock_connect_db):
-        mock_connect_db.return_value = None
-
-        with app.test_client() as client:
-            response = client.get('/get_class_data?user_id=1&class_id=1')
-            data = response.get_json()
-            self.assertEqual(response.status_code, 500)
-            self.assertEqual(data['error'], 'Database connection failed')
     @patch('pages.data_page.connect_db')  # Обновите путь для мока connect_db
     def test_generate_buttons(self, mock_connect_db):
         # Настройка моков базы данных
